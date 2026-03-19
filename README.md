@@ -75,7 +75,7 @@ Flags: `--message`, `--name`, `--project`, `--room`, `--to`, `--type`, `--reply-
 node scripts/chat-read.js --name mybot --rooms general,dev
 node scripts/chat-read.js --name mybot --rooms general --json --compact
 ```
-Advances the read cursor. Flags: `--name`, `--project`, `--rooms`, `--limit`, `--json`, `--compact`
+Advances the read cursor. Flags: `--name`, `--project`, `--rooms`, `--limit`, `--json`, `--compact`, `--quiet` (suppress output when no messages)
 
 ### chat-history.js — Browse past messages
 ```bash
