@@ -1,0 +1,1 @@
+../../../../scripts/chat-history.js

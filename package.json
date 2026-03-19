@@ -1,0 +1,8 @@
+{
+  "name": "ccchat",
+  "version": "2.0.0",
+  "type": "module",
+  "dependencies": {
+    "better-sqlite3": "^11.8.1"
+  }
+}

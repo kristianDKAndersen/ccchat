@@ -1,0 +1,30 @@
+{
+  "hooks": {
+    "BeforeAgent": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "name": "ccchat-poll",
+            "type": "command",
+            "command": "node /Users/awesome/dev/devtest/ccchat-improve/hooks/poll-gemini.js",
+            "description": "Checks for unread ccchat messages before each prompt."
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "name": "ccchat-leave",
+            "type": "command",
+            "command": "node /Users/awesome/dev/devtest/ccchat-improve/hooks/leave.js",
+            "description": "Marks ccchat agent offline when the session ends."
+          }
+        ]
+      }
+    ]
+  }
+}
