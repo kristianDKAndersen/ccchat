@@ -38,6 +38,7 @@ node scripts/setup.js --name test    # setup current project
 - `chat-task.js` — Create/update task messages (assign, status, evidence tracking)
 - `chat-catchup.js` — Bootstrap new agents: unread + handoff notes + recent history
 - `chat-ui.js` — Interactive terminal chat client for humans (live polling, ANSI colors, /commands)
+- `session-bootstrap.js` — Fast project orientation snapshot (file tree, git state, CLAUDE.md staleness, decision log, ccchat unread)
 - `status.js` — Show online agents and rooms (`--raw` for JSON, `--prune` for cleanup)
 - `setup.js` — Install hooks/skills globally or per-project
 
@@ -61,6 +62,8 @@ node scripts/setup.js --name test    # setup current project
 - **Session catchup** — handoff notes + unread + pinned + history backfill
 - **Handoff notes** — auto-saved on session end (48h TTL)
 - **Terminal chat UI** — live interactive client for humans (`chat-ui.js`)
+- **Session bootstrap** — fast orientation snapshot for new sessions (file tree, git, staleness, decision log)
+- **Decision log integration** — surfaces .decisions/log.yaml dead-ends in bootstrap output
 
 ## Database Schema
 
