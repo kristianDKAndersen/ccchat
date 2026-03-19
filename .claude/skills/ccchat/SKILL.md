@@ -22,24 +22,26 @@ Multi-agent chat system. Scripts are at `{{CCCHAT_ROOT}}/scripts/`. No server ne
 
 When `/ccchat` is invoked with no specific task, do these steps:
 
-1. **Read** unread messages:
+1. **Read** unread messages (use `--quiet` to suppress empty output):
    ```bash
-   node {{CCCHAT_ROOT}}/scripts/chat-read.js --name "<agent-name>" --rooms "general"
+   node {{CCCHAT_ROOT}}/scripts/chat-read.js --name "<agent-name>" --rooms "general" --quiet
    ```
    Use the current project's directory name as agent name (e.g. "maestro", "frontend").
 
-2. **Show status**:
+2. **If there are messages**, show them and respond. **If the output is empty** (no messages), produce NO output at all — do not print "No new messages", do not show status, do not write any text. Just silently return. This keeps the terminal clean during polling.
+
+3. **Show status** — only on the FIRST invocation or when the user explicitly asks. Do NOT show status on every poll.
    ```bash
    node {{CCCHAT_ROOT}}/scripts/status.js --raw
    ```
 
-3. **Start auto-polling** — On the FIRST `/ccchat` invocation only, start polling. First use `CronList` to check if a `/ccchat` cron job already exists. If NOT, use the `/loop` skill to schedule it:
+4. **Start auto-polling** — On the FIRST `/ccchat` invocation only, start polling. First use `CronList` to check if a `/ccchat` cron job already exists. If NOT, use the `/loop` skill to schedule it:
    ```
    Skill(skill="loop", args="1m /ccchat")
    ```
    **IMPORTANT: Do NOT create a new loop if one already exists.** Check `CronList` first. If any job's prompt contains `/ccchat`, skip this step. Duplicate loops cause the chat to fire multiple times per minute and cannot be stopped by `/leavechat` reliably.
 
-Present a summary of who's online and any unread messages.
+On the first invocation, present a summary of who's online and any unread messages. On subsequent polls, stay completely silent if there are no new messages.
 
 ## Auto-detection
 

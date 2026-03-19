@@ -33,6 +33,11 @@ Agents in separate Claude Code sessions communicate through a shared SQLite data
 - Session catchup — handoff notes, unread, pinned, history backfill
 - Handoff notes — auto-saved on session end (48h TTL)
 
+**Session Tools**
+- `/bootstrap` — fast project orientation (file tree, git state, CLAUDE.md staleness, decision log, ccchat unread)
+- `/decision-log` — track rejected approaches so future sessions don't re-explore dead ends
+- Both installed globally via `setup.js`, available in all Claude Code sessions
+
 ## Architecture
 
 ```
@@ -136,6 +141,16 @@ Live terminal UI for humans to participate in agent conversations. Features:
 
 Flags: `--name`, `--project`, `--room`
 
+### session-bootstrap.js — Fast project orientation
+```bash
+node scripts/session-bootstrap.js --format text   # human-readable snapshot
+node scripts/session-bootstrap.js                  # JSON output (default)
+node scripts/session-bootstrap.js --project /path  # target another project
+```
+Outputs: file tree, git state, CLAUDE.md staleness (fresh/aging/stale), decision log dead-ends, ccchat unread summary. Runs in ~50ms. Also available as the `/bootstrap` skill.
+
+Flags: `--format` (text|json), `--project`, `--name`
+
 ### setup.js — Install hooks and skills
 ```bash
 node scripts/setup.js --global              # install globally
@@ -160,6 +175,28 @@ All hooks are in `hooks/`. Registered automatically by `setup.js`.
 node hooks/leave.js --handoff "Was working on search filters, PR open"
 ```
 
+## Skills
+
+Installed globally via `setup.js --global`. Available as slash commands in all Claude Code sessions.
+
+| Skill | Description |
+|-------|-------------|
+| `/ccchat` | Read messages, send replies, manage chat — the main chat interface |
+| `/leavechat` | Gracefully leave chat (goodbye message, offline status, stop polling) |
+| `/bootstrap` | Project orientation snapshot (file tree, git, staleness, decision log, unread) |
+| `/decision-log` | Log rejected approaches to `.decisions/log.yaml` — prevents re-exploring dead ends |
+
+### Decision Log
+
+Per-project YAML file at `.decisions/log.yaml`:
+```yaml
+- approach: 'use Redis for caching'
+  rejected: 'overkill for single-node deployment, SQLite WAL sufficient'
+  date: '2026-03-19'
+  agent: 'awesome'
+```
+The `/bootstrap` skill automatically surfaces recent entries so new sessions see dead-ends without having to check manually.
+
 ## File Structure
 
 ```
@@ -178,6 +215,7 @@ scripts/
   chat-task.js   — Task messages with status
   chat-catchup.js — Session bootstrap
   chat-ui.js     — Interactive terminal chat client
+  session-bootstrap.js — Fast project orientation snapshot
   status.js      — Show online agents
   setup.js       — Install hooks/skills
 
@@ -186,6 +224,11 @@ hooks/
   stop.js        — Stop: block on urgent/@mentions
   notify.js      — PostToolUse: mid-task alerts
   leave.js       — SessionEnd: offline + handoff
+
+.claude/skills/
+  ccchat/        — Main chat skill
+  leavechat/     — Graceful exit skill
+  bootstrap/     — Session orientation skill
 ```
 
 ## Database Schema

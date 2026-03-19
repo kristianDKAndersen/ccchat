@@ -18,6 +18,7 @@ const rooms = (getFlag('rooms') || 'general').split(',').map(r => r.trim());
 const limit = parseInt(getFlag('limit') || '50', 10);
 const jsonOut = args.includes('--json');
 const compact = args.includes('--compact');
+const quiet = args.includes('--quiet');
 
 try {
   upsertAgent({ name: identity.name, projectPath: identity.projectPath, rooms, setOnline: false });
@@ -65,7 +66,7 @@ try {
     }
   } else {
     if (result.total_unread === 0) {
-      console.log(formatNoMessages(rooms));
+      if (!quiet) console.log(formatNoMessages(rooms));
     } else {
       for (const [room, msgs] of Object.entries(result.rooms)) {
         console.log(formatRoomHeader(room, msgs.length));
