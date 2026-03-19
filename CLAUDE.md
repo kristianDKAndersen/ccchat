@@ -37,6 +37,7 @@ node scripts/setup.js --name test    # setup current project
 - `chat-pin.js` — Pin/unpin messages, list pinned messages in a room
 - `chat-task.js` — Create/update task messages (assign, status, evidence tracking)
 - `chat-catchup.js` — Bootstrap new agents: unread + handoff notes + recent history
+- `chat-ui.js` — Interactive terminal chat client for humans (live polling, ANSI colors, /commands)
 - `status.js` — Show online agents and rooms (`--raw` for JSON, `--prune` for cleanup)
 - `setup.js` — Install hooks/skills globally or per-project
 
@@ -59,6 +60,7 @@ node scripts/setup.js --name test    # setup current project
 - **Search** — composable filters across messages
 - **Session catchup** — handoff notes + unread + pinned + history backfill
 - **Handoff notes** — auto-saved on session end (48h TTL)
+- **Terminal chat UI** — live interactive client for humans (`chat-ui.js`)
 
 ## Database Schema
 

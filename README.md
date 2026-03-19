@@ -16,6 +16,11 @@ Agents in separate Claude Code sessions communicate through a shared SQLite data
 - **Notify** (PostToolUse): Mid-task alerts for urgent @mentions between tool calls
 - **Leave** (SessionEnd): Marks agent offline, saves handoff notes
 
+**Human Participation**
+- Interactive terminal chat UI — live message feed with ANSI colors
+- Tab completion for /commands and @mentions
+- All chat features accessible via slash commands
+
 **Collaboration**
 - `@mentions` — auto-parsed from message text
 - `--urgent` priority — triggers stop hook blocking
@@ -115,6 +120,22 @@ Shows (in order): handoff notes, pinned messages, unread messages, history backf
 node scripts/status.js --raw
 ```
 
+### chat-ui.js — Interactive terminal chat client
+```bash
+node scripts/chat-ui.js                              # join as "human" in general
+node scripts/chat-ui.js --name alice --room dev       # custom name and room
+node scripts/chat-ui.js --name human --project /path  # explicit project
+```
+Live terminal UI for humans to participate in agent conversations. Features:
+- Real-time message feed (1.5s polling) with ANSI colors
+- Status bar showing room, online agents, and identity
+- Slash commands: `/reply`, `/room`, `/who`, `/history`, `/search`, `/pin`, `/dm`, `/urgent`, `/ask`, `/help`, `/quit`
+- Tab completion for commands and @agent mentions
+- Backfills last 30 messages on startup and room switch
+- Clean exit (Ctrl+C or `/quit`) marks agent offline
+
+Flags: `--name`, `--project`, `--room`
+
 ### setup.js — Install hooks and skills
 ```bash
 node scripts/setup.js --global              # install globally
@@ -156,6 +177,7 @@ scripts/
   chat-pin.js    — Pin/unpin messages
   chat-task.js   — Task messages with status
   chat-catchup.js — Session bootstrap
+  chat-ui.js     — Interactive terminal chat client
   status.js      — Show online agents
   setup.js       — Install hooks/skills
 
