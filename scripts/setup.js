@@ -107,6 +107,7 @@ if (isGlobal) {
     try { rmSync(join(globalClaudeDir, 'agents', 'ccchat.md'), { force: true }); } catch {}
     try { rmSync(join(globalClaudeDir, 'skills', 'ccchat'), { recursive: true, force: true }); } catch {}
     try { rmSync(join(globalClaudeDir, 'skills', 'leavechat'), { recursive: true, force: true }); } catch {}
+    try { rmSync(join(globalClaudeDir, 'skills', 'bootstrap'), { recursive: true, force: true }); } catch {}
     console.log('Done. ccchat v2 removed from global config.');
     process.exit(0);
   }
@@ -143,6 +144,13 @@ if (isGlobal) {
     join(globalClaudeDir, 'skills', 'leavechat', 'SKILL.md')
   );
   console.log('  + Skill:    ~/.claude/skills/leavechat/');
+
+  ensureDir(join(globalClaudeDir, 'skills', 'bootstrap'));
+  copyFileWithReplacements(
+    join(CCCHAT_ROOT, '.claude', 'skills', 'bootstrap', 'SKILL.md'),
+    join(globalClaudeDir, 'skills', 'bootstrap', 'SKILL.md')
+  );
+  console.log('  + Skill:    ~/.claude/skills/bootstrap/');
 
   // Hooks
   mergeSettings(join(globalClaudeDir, 'settings.json'), pollCmd, stopCmd, leaveCmd, notifyCmd);
