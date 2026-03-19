@@ -16,7 +16,7 @@ description: >
 
 # ccchat
 
-Multi-agent chat system. Scripts are at `{{CCCHAT_ROOT}}/scripts/`. No server needed — reads/writes SQLite directly.
+Multi-agent chat system. Scripts are at `/Users/awesome/dev/devtest/ccchat-improve/scripts/`. No server needed — reads/writes SQLite directly.
 
 ## Quick start
 
@@ -24,7 +24,7 @@ When `/ccchat` is invoked with no specific task, do these steps:
 
 1. **Read** unread messages (use `--quiet` to suppress empty output):
    ```bash
-   node {{CCCHAT_ROOT}}/scripts/chat-read.js --name "<agent-name>" --rooms "general" --quiet
+   node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-read.js --name "<agent-name>" --rooms "general" --quiet
    ```
    Use the current project's directory name as agent name (e.g. "maestro", "frontend").
 
@@ -32,14 +32,18 @@ When `/ccchat` is invoked with no specific task, do these steps:
 
 3. **Show status** — only on the FIRST invocation or when the user explicitly asks. Do NOT show status on every poll.
    ```bash
-   node {{CCCHAT_ROOT}}/scripts/status.js --raw
+   node /Users/awesome/dev/devtest/ccchat-improve/scripts/status.js --raw
    ```
 
-4. **Start auto-polling** — On the FIRST `/ccchat` invocation only, start polling. First use `CronList` to check if a `/ccchat` cron job already exists. If NOT, use the `/loop` skill to schedule it:
+4. **Start auto-polling** — On the FIRST `/ccchat` invocation only, start polling. First use `CronList` to check if a ccchat cron job already exists. If NOT, create one directly with `CronCreate` using a **minimal prompt** (NOT the full `/ccchat` skill):
    ```
-   Skill(skill="loop", args="1m /ccchat")
+   CronCreate(cron="*/1 * * * *", prompt="Run: node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-read.js --name \"<agent-name>\" --rooms \"general\" --quiet\nIf the output is empty, produce NO output — just silently return.\nIf the output is non-empty, check: does any message contain @<agent-name>, have priority 'urgent', or come from chat-ask (question type)? If YES — escalate by running Skill(skill=\"ccchat\") to get full context before responding. If NO — respond inline using: node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-send.js --message \"<reply>\" --room general --name \"<agent-name>\" --reply-to <id>")
    ```
-   **IMPORTANT: Do NOT create a new loop if one already exists.** Check `CronList` first. If any job's prompt contains `/ccchat`, skip this step. Duplicate loops cause the chat to fire multiple times per minute and cannot be stopped by `/leavechat` reliably.
+   Replace `<agent-name>` with the actual agent name when creating the cron.
+
+   **Why minimal prompt instead of `/ccchat`?** Loading the full `/ccchat` skill on every poll injects ~200 lines of SKILL.md into context, costing ~2k tokens per poll (120k+ tokens/hour). The minimal prompt costs ~200 tokens — a 10x reduction.
+
+   **IMPORTANT: Do NOT create a new cron if one already exists.** Check `CronList` first. If any job's prompt contains `chat-read` or `ccchat`, skip this step. This check also prevents duplicate cron creation when `/ccchat` is invoked via escalation from the minimal cron poll. Duplicate crons cause the chat to fire multiple times per minute and cannot be stopped by `/leavechat` reliably.
 
 On the first invocation, present a summary of who's online and any unread messages. On subsequent polls, stay completely silent if there are no new messages.
 
@@ -47,7 +51,7 @@ On the first invocation, present a summary of who's online and any unread messag
 
 Two mechanisms keep the chat responsive:
 
-1. **`/loop` polling (primary):** The `/loop 1m /ccchat` schedule checks for messages every minute, even while the agent is idle. **This is essential** — without it, an idle agent will never see incoming messages.
+1. **Minimal cron polling (primary):** A `CronCreate` job checks for messages every minute using a minimal prompt (just `chat-read.js --quiet` + respond logic). Uses **progressive disclosure**: simple messages get inline replies (~200 tokens), but @mentions, urgent messages, and questions escalate to the full `/ccchat` skill for rich responses (~2.5k tokens). Quiet polls cost ~200 tokens vs ~2k for the old full-skill approach. **This is essential** — without it, an idle agent will never see incoming messages.
 
 2. **Hooks (supplemental):**
    - `UserPromptSubmit` hook: shows unread banner when the user submits a prompt
@@ -62,38 +66,38 @@ Run these directly via Bash. Replace `<name>` with the agent name.
 
 ### Send a message
 ```bash
-node {{CCCHAT_ROOT}}/scripts/chat-send.js --message "<message>" --room general --name "<name>"
+node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-send.js --message "<message>" --room general --name "<name>"
 ```
 
 ### Ask a question (waits for responses)
 ```bash
-node {{CCCHAT_ROOT}}/scripts/chat-ask.js --name "<name>" --question "<question>" --room general --timeout 120
+node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-ask.js --name "<name>" --question "<question>" --room general --timeout 120
 ```
 This blocks until responses arrive or timeout. For long waits, use a subagent:
 ```
-Agent(description="ccchat ask peers", prompt="Run: node {{CCCHAT_ROOT}}/scripts/chat-ask.js --name '<name>' --question '<question>' --room general --timeout 120. Return the raw JSON output.")
+Agent(description="ccchat ask peers", prompt="Run: node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-ask.js --name '<name>' --question '<question>' --room general --timeout 120. Return the raw JSON output.")
 ```
 
 ### Reply to a message
 ```bash
-node {{CCCHAT_ROOT}}/scripts/chat-send.js --message "<reply>" --room general --name "<name>" --reply-to <id>
+node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-send.js --message "<reply>" --room general --name "<name>" --reply-to <id>
 ```
 IMPORTANT: Always use `--reply-to <questionId>` when responding to a `chat-ask` question. Without it, `chat-ask` will not collect your response (it filters by `parent_id`).
 
 ### Read unread messages
 ```bash
-node {{CCCHAT_ROOT}}/scripts/chat-read.js --name "<name>" --rooms "general"
+node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-read.js --name "<name>" --rooms "general"
 ```
 
 ### View message history
 ```bash
-node {{CCCHAT_ROOT}}/scripts/chat-history.js --room general [--last 20] [--before <id>]
+node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-history.js --room general [--last 20] [--before <id>]
 ```
 Read-only — does not advance the read cursor. Use `--before <id>` to paginate backwards.
 
 ### Check status
 ```bash
-node {{CCCHAT_ROOT}}/scripts/status.js --raw
+node /Users/awesome/dev/devtest/ccchat-improve/scripts/status.js --raw
 ```
 
 ## Choosing the right command
