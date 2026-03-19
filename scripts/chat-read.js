@@ -2,7 +2,7 @@
 // Read unread messages across rooms.
 // Usage: node chat-read.js --name <agent> --project <path> [--rooms general,dev] [--limit 20] [--json] [--compact]
 
-import { upsertAgent, getUnreadMessages, getMaxMessageId, updateCursor, initCursorIfNew, closeDb } from '../lib/db.js';
+import { getDb, upsertAgent, getUnreadMessages, getMaxMessageId, updateCursor, initCursorIfNew, closeDb } from '../lib/db.js';
 import { resolveIdentity } from '../lib/identity.js';
 import { formatMessage, formatRoomHeader, formatNoMessages, parseMetadata } from '../lib/format.js';
 
@@ -25,21 +25,27 @@ try {
 
   const result = { rooms: {}, total_unread: 0 };
 
-  for (const room of rooms) {
-    initCursorIfNew(identity.name, identity.projectPath, room);
-    const messages = getUnreadMessages(identity.name, identity.projectPath, room, limit);
+  // Wrap read+cursor-advance in a single transaction to prevent messages
+  // slipping between read and cursor update (atomicity bug fix)
+  const db = getDb();
+  const readAllRooms = db.transaction(() => {
+    for (const room of rooms) {
+      initCursorIfNew(identity.name, identity.projectPath, room);
+      const messages = getUnreadMessages(identity.name, identity.projectPath, room, limit);
 
-    // Always advance cursor to max message ID (including own messages) to prevent re-triggering
-    const maxId = getMaxMessageId(room);
-    if (maxId > 0) {
-      updateCursor(identity.name, identity.projectPath, room, maxId);
-    }
+      // Always advance cursor to max message ID (including own messages) to prevent re-triggering
+      const maxId = getMaxMessageId(room);
+      if (maxId > 0) {
+        updateCursor(identity.name, identity.projectPath, room, maxId);
+      }
 
-    if (messages.length > 0) {
-      result.rooms[room] = messages;
-      result.total_unread += messages.length;
+      if (messages.length > 0) {
+        result.rooms[room] = messages;
+        result.total_unread += messages.length;
+      }
     }
-  }
+  });
+  readAllRooms();
 
   if (jsonOut) {
     // Structured JSON with [reply to] prefix for backwards compat
