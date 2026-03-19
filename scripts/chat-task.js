@@ -79,7 +79,7 @@ try {
     initCursorIfNew(identity.name, identity.projectPath, room);
 
     const result = insertMessage({
-      type: 'message',
+      type: 'task',
       fromAgent: identity.name,
       fromProject: identity.projectPath,
       room,

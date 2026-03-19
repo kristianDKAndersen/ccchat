@@ -2,7 +2,7 @@
 // Session bootstrap — get oriented quickly with unread, handoff notes, and recent history.
 // Usage: node chat-catchup.js --name <agent> --project <path> [--rooms general,dev] [--budget 50] [--json] [--compact]
 
-import { upsertAgent, getUnreadMessages, getMaxMessageId, getRecentMessages, getHandoffNotes, getPinnedMessages, updateCursor, initCursorIfNew, closeDb } from '../lib/db.js';
+import { getDb, upsertAgent, getUnreadMessages, getMaxMessageId, getRecentMessages, getHandoffNotes, getPinnedMessages, updateCursor, initCursorIfNew, closeDb } from '../lib/db.js';
 import { resolveIdentity } from '../lib/identity.js';
 import { formatMessage, formatRoomHeader, parseMetadata } from '../lib/format.js';
 
@@ -45,23 +45,28 @@ try {
   }
 
   // Section 3: Unread messages (most actionable)
+  // Wrap read+cursor-advance in transaction to prevent messages slipping through
   let budgetRemaining = budget;
-  for (const room of rooms) {
-    initCursorIfNew(identity.name, identity.projectPath, room);
-    const messages = getUnreadMessages(identity.name, identity.projectPath, room, budgetRemaining);
+  const db = getDb();
+  const readUnread = db.transaction(() => {
+    for (const room of rooms) {
+      initCursorIfNew(identity.name, identity.projectPath, room);
+      const messages = getUnreadMessages(identity.name, identity.projectPath, room, budgetRemaining);
 
-    if (messages.length > 0) {
-      result.unread[room] = messages;
-      result.total_unread += messages.length;
-      budgetRemaining -= messages.length;
-    }
+      if (messages.length > 0) {
+        result.unread[room] = messages;
+        result.total_unread += messages.length;
+        budgetRemaining -= messages.length;
+      }
 
-    // Advance cursor
-    const maxId = getMaxMessageId(room);
-    if (maxId > 0) {
-      updateCursor(identity.name, identity.projectPath, room, maxId);
+      // Advance cursor
+      const maxId = getMaxMessageId(room);
+      if (maxId > 0) {
+        updateCursor(identity.name, identity.projectPath, room, maxId);
+      }
     }
-  }
+  });
+  readUnread();
 
   // Section 4: History backfill (background context, up to remaining budget)
   if (budgetRemaining > 0) {

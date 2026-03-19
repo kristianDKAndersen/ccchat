@@ -108,6 +108,11 @@ async function main() {
       responses,
     }, null, 2));
   }
+
+  // Exit with code 1 if timeout with no responses
+  if (responses.length === 0) {
+    process.exitCode = 1;
+  }
 }
 
 main().catch(e => { console.error(e.message); closeDb(); process.exit(1); });

@@ -167,18 +167,26 @@ function getDecisionLog() {
     const entries = [];
     let current = null;
 
+    // Extract a YAML value: handles 'single', "double", and unquoted
+    function extractValue(raw) {
+      const trimmed = raw.trim();
+      if (trimmed.startsWith("'") && trimmed.endsWith("'")) return trimmed.slice(1, -1);
+      if (trimmed.startsWith('"') && trimmed.endsWith('"')) return trimmed.slice(1, -1);
+      return trimmed;
+    }
+
     for (const line of content.split('\n')) {
-      const entryMatch = line.match(/^- approach:\s*'(.+)'$/);
+      const entryMatch = line.match(/^- approach:\s*(.+)$/);
       if (entryMatch) {
         if (current) entries.push(current);
-        current = { approach: entryMatch[1] };
+        current = { approach: extractValue(entryMatch[1]) };
         continue;
       }
       if (!current) continue;
 
-      const fieldMatch = line.match(/^\s+(rejected|date|agent|context):\s*'(.+)'$/);
+      const fieldMatch = line.match(/^\s+(rejected|date|agent|context):\s*(.+)$/);
       if (fieldMatch) {
-        current[fieldMatch[1]] = fieldMatch[2];
+        current[fieldMatch[1]] = extractValue(fieldMatch[2]);
       }
     }
     if (current) entries.push(current);

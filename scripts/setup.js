@@ -42,27 +42,32 @@ function mergeSettings(settingsPath, pollCmd, stopCmd, leaveCmd, notifyCmd) {
 
   if (!settings.hooks) settings.hooks = {};
 
+  // Helper: check if a hook command is already registered (path-independent)
+  function hasHook(arr, hookFile) {
+    return arr.some(e => e.hooks?.some(h => h.command?.includes(hookFile)));
+  }
+
   // UserPromptSubmit
   if (!settings.hooks.UserPromptSubmit) settings.hooks.UserPromptSubmit = [];
-  if (!settings.hooks.UserPromptSubmit.some(e => e.hooks?.some(h => h.command?.includes('ccchat-improve')))) {
+  if (!hasHook(settings.hooks.UserPromptSubmit, 'poll.js')) {
     settings.hooks.UserPromptSubmit.push({ hooks: [{ type: 'command', command: pollCmd }] });
   }
 
   // Stop
   if (!settings.hooks.Stop) settings.hooks.Stop = [];
-  if (!settings.hooks.Stop.some(e => e.hooks?.some(h => h.command?.includes('ccchat-improve')))) {
+  if (!hasHook(settings.hooks.Stop, 'stop.js')) {
     settings.hooks.Stop.push({ hooks: [{ type: 'command', command: stopCmd }] });
   }
 
   // SessionEnd
   if (!settings.hooks.SessionEnd) settings.hooks.SessionEnd = [];
-  if (!settings.hooks.SessionEnd.some(e => e.hooks?.some(h => h.command?.includes('ccchat-improve')))) {
+  if (!hasHook(settings.hooks.SessionEnd, 'leave.js')) {
     settings.hooks.SessionEnd.push({ hooks: [{ type: 'command', command: leaveCmd }] });
   }
 
   // PostToolUse
   if (!settings.hooks.PostToolUse) settings.hooks.PostToolUse = [];
-  if (!settings.hooks.PostToolUse.some(e => e.hooks?.some(h => h.command?.includes('ccchat-improve')))) {
+  if (!hasHook(settings.hooks.PostToolUse, 'notify.js')) {
     settings.hooks.PostToolUse.push({ hooks: [{ type: 'command', command: notifyCmd }] });
   }
 
@@ -75,8 +80,9 @@ function removeFromSettings(settingsPath) {
     const settings = JSON.parse(readFileSync(settingsPath, 'utf8'));
     for (const event of ['UserPromptSubmit', 'Stop', 'SessionEnd', 'PostToolUse']) {
       if (settings.hooks?.[event]) {
+        const hookFiles = ['poll.js', 'stop.js', 'leave.js', 'notify.js'];
         settings.hooks[event] = settings.hooks[event].filter(e =>
-          !e.hooks?.some(h => h.command?.includes('ccchat-improve'))
+          !e.hooks?.some(h => hookFiles.some(f => h.command?.includes(f)))
         );
         if (settings.hooks[event].length === 0) delete settings.hooks[event];
       }

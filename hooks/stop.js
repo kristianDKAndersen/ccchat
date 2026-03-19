@@ -12,9 +12,6 @@ async function main() {
   for await (const chunk of process.stdin) chunks.push(chunk);
   const input = JSON.parse(Buffer.concat(chunks).toString());
 
-  // Loop prevention: if Stop hook already triggered this response, skip
-  if (input.stop_hook_active) return;
-
   const identity = resolveIdentity({ project: input.cwd });
 
   upsertAgent({ name: identity.name, projectPath: identity.projectPath, rooms: identity.rooms, setOnline: false });
