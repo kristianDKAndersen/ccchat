@@ -4,7 +4,7 @@
 //   node chat-task.js --name <agent> --project <path> --message "Do X" --room general [--assign bob] [--urgent]
 //   node chat-task.js --update <id> --status done|open|in-progress|blocked [--evidence "proof"]
 
-import { upsertAgent, insertMessage, getMessage, initCursorIfNew, updateCursor, closeDb } from '../lib/db.js';
+import { upsertAgent, insertMessage, getMessage, getDb, initCursorIfNew, updateCursor, closeDb } from '../lib/db.js';
 import { resolveIdentity } from '../lib/identity.js';
 import { formatSendConfirm, parseMentions, parseMetadata } from '../lib/format.js';
 
@@ -46,7 +46,6 @@ try {
     meta.task_status = status;
     if (evidence) meta.evidence = evidence;
 
-    const { getDb } = await import('../lib/db.js');
     const d = getDb();
     d.prepare('UPDATE messages SET metadata = ? WHERE id = ?').run(JSON.stringify(meta), id);
 

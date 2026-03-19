@@ -59,4 +59,4 @@ async function main() {
   }
 }
 
-main().catch(() => {}).finally(() => closeDb());
+main().catch(e => { process.stderr.write(`ccchat stop hook error: ${e.message}\n`); }).finally(() => closeDb());

@@ -5,7 +5,7 @@
 import { getDb, projectHash, getMaxMessageId, closeDb } from '../lib/db.js';
 import { resolveIdentity } from '../lib/identity.js';
 import { parseMetadata } from '../lib/format.js';
-import { readFileSync, writeFileSync } from 'fs';
+import { readFileSync, writeFileSync, renameSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -24,7 +24,11 @@ function loadRateLimit(path) {
 }
 
 function saveRateLimit(path, data) {
-  try { writeFileSync(path, JSON.stringify(data)); } catch { /* best effort */ }
+  const tmp = path + '.tmp';
+  try {
+    writeFileSync(tmp, JSON.stringify(data));
+    renameSync(tmp, path);
+  } catch { /* best effort */ }
 }
 
 try {

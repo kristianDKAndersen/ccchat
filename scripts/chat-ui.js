@@ -73,6 +73,7 @@ function colorMessage(msg) {
 
 let lastSeenId = 0;
 let pollTimer = null;
+let statusTimer = null;
 let rl = null;
 
 // ── Output helpers (write above prompt without disrupting input) ─────────────
@@ -360,6 +361,8 @@ function handleCommand(line) {
 function cleanup() {
   if (pollTimer) clearInterval(pollTimer);
   pollTimer = null;
+  if (statusTimer) clearInterval(statusTimer);
+  statusTimer = null;
   try {
     setAgentOffline(identity.name, identity.projectPath);
     closeDb();
@@ -421,7 +424,7 @@ function main() {
   pollTimer = setInterval(poll, 1500);
 
   // Refresh status bar every 30s
-  setInterval(() => {
+  statusTimer = setInterval(() => {
     // Save cursor, move to top, draw status, restore cursor
     process.stdout.write(`${ESC}s${ESC}H`);
     drawStatusBar();

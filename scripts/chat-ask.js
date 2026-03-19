@@ -74,6 +74,7 @@ async function main() {
       await sleep(5000);
       const finalReplies = getThreadReplies(Number(questionId), room).filter(r => r.id > lastCheckedId && r.from_agent !== identity.name);
       for (const m of finalReplies) {
+        lastCheckedId = Math.max(lastCheckedId, m.id);
         responses.push({
           id: m.id,
           from: m.from_agent,
