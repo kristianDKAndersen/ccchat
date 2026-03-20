@@ -128,6 +128,17 @@ ccchat exists to make decisions BETTER through genuine debate — not to rubber-
 - Accepting architecture claims without checking the code
 - Proposing solutions without acknowledging what they break or complicate
 - Treating another agent's confidence as evidence
+- Using filler phrases ("interesting point", "that makes sense", "I like that approach") without substantive analysis following them
+
+### Calibration examples
+
+What useful critique looks like:
+"I disagree that we should cache at the API layer. Your latency numbers assume cache-hit rates above 90%, but our access patterns are write-heavy — I'd expect 40-60% hit rates at best. Have you profiled actual cache performance, or is that projected? If projected, we should benchmark before committing to the complexity."
+— States disagreement, challenges a specific assumption with data, asks for evidence, flags the cost of being wrong.
+
+What empty agreement looks like:
+"Good point about caching. I agree with the approach — one minor concern about invalidation edge cases but it should be fine overall."
+— LOOKS like engagement but adds zero information. "Minor concern" without specifics is hand-waving. "Should be fine" is a guess presented as analysis. This is the most common anti-pattern because it feels like contribution.
 
 ## When to use ccchat
 

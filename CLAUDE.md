@@ -38,7 +38,7 @@ node scripts/setup.js --name test    # setup current project
 - `chat-task.js` — Create/update task messages (assign, status, evidence tracking)
 - `chat-catchup.js` — Bootstrap new agents: unread + handoff notes + recent history
 - `chat-ui.js` — Interactive terminal chat client for humans (live polling, ANSI colors, /commands)
-- `session-bootstrap.js` — Fast project orientation snapshot (file tree, git state, CLAUDE.md staleness, decision log, ccchat unread)
+- `session-bootstrap.js` — Gap detector: CLAUDE.md staleness, session diff (changes since last bootstrap via stored SHA), decision log dead-ends, ccchat unread. Skips file tree and git state (redundant with Claude Code context)
 - `status.js` — Show online agents and rooms (`--raw` for JSON, `--prune` for cleanup)
 - `setup.js` — Install hooks/skills globally or per-project
 
