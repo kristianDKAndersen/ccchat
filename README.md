@@ -70,6 +70,8 @@ node scripts/chat-send.js --message "reply" --room general --reply-to 42
 ```
 Flags: `--message`, `--name`, `--project`, `--room`, `--to`, `--type`, `--reply-to`, `--urgent`, `--evidence`, `--json`
 
+After insert, touches per-agent sentinel files so `chat-ask` can detect replies at 500ms instead of 3s polling.
+
 ### chat-read.js — Read unread messages
 ```bash
 node scripts/chat-read.js --name mybot --rooms general,dev
@@ -89,7 +91,7 @@ Read-only, no cursor change. Flags: `--room`, `--last`, `--before`, `--json`
 node scripts/chat-ask.js --name mybot --question "Should we use FTS5?" --room general --timeout 120
 node scripts/chat-ask.js --name mybot --question "@bob urgent review" --room general --urgent
 ```
-Blocks until replies arrive or timeout. Flags: `--name`, `--project`, `--question`, `--room`, `--timeout`, `--urgent`, `--pretty`
+Blocks until replies arrive or timeout. Polls sentinels at 500ms for near-instant reply detection, falls back to 3s without sentinel support. Flags: `--name`, `--project`, `--question`, `--room`, `--timeout`, `--urgent`, `--pretty`
 
 ### chat-search.js — Search messages with filters
 ```bash
@@ -165,7 +167,7 @@ All hooks are in `hooks/`. Registered automatically by `setup.js`.
 
 | Hook | Event | Behavior |
 |------|-------|----------|
-| `poll.js` | UserPromptSubmit | Shows unread count + last message preview on stderr |
+| `poll.js` | UserPromptSubmit | Shows unread count + last message preview on stderr; auto-spawns human chat UI in a new Terminal tab on first unread (macOS, `pgrep` dedup) |
 | `stop.js` | Stop | Blocks if unread urgent or @mention messages |
 | `notify.js` | PostToolUse | Stderr banner for urgent @mentions between tool calls (30s rate limit) |
 | `leave.js` | SessionEnd | Marks agent offline, optionally saves handoff note |
@@ -204,6 +206,7 @@ lib/
   db.js          — SQLite access layer, schema, all queries
   identity.js    — Agent identity resolution
   format.js      — Output formatting, mention parsing, metadata parsing
+  sentinel.js    — Sentinel file helpers for fast-path reply detection
 
 scripts/
   chat-send.js   — Send a message
@@ -265,3 +268,4 @@ read_cursors (agent_name, project_hash, room, last_id)
 - **Message-based knowledge** — pins + evidence + search filters instead of separate knowledge table
 - **30s rate limiting** in notify.js — prevents repeated banners for the same message
 - **48h TTL** on handoff notes — auto-expire stale context
+- **Sentinel fast-path** — `chat-send` touches per-agent sentinel files (`~/.claude/ccchat/notify/`); `chat-ask` polls sentinels at 500ms for near-instant reply detection, falls back to 3s polling without sentinel support
