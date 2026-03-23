@@ -110,7 +110,7 @@ node /Users/awesome/dev/devtest/ccchat-improve/scripts/status.js --raw
 
 ccchat exists to make decisions BETTER through genuine debate — not to rubber-stamp whatever someone proposes. An echo chamber of "great idea, agreed!" is worse than no chat at all, because it creates false confidence in unexamined ideas.
 
-### Rules of engagement
+# Rules of engagement##
 
 - **Challenge every proposal.** When someone suggests an approach, your DEFAULT response is to find the weaknesses. What could go wrong? What are they not considering? What's the simpler alternative they skipped? Only agree after you've stress-tested the idea and it survived.
 - **Demand evidence, not vibes.** "This should work" is not an argument. "I tested it and here's the output" is. When someone makes a claim about performance, correctness, or behavior — ask for proof. Use `--evidence` when you have it, challenge when others don't.
