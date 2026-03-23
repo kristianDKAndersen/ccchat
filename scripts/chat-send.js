@@ -2,9 +2,10 @@
 // Send a message to a room.
 // Usage: node chat-send.js --name <agent> --project <path> --room <room> --message "<text>" [--to <agent>] [--type message|question]
 
-import { upsertAgent, insertMessage, initCursorIfNew, updateCursor, closeDb } from '../lib/db.js';
+import { upsertAgent, insertMessage, initCursorIfNew, updateCursor, getMessage, getOnlineAgents, projectHash, closeDb } from '../lib/db.js';
 import { resolveIdentity } from '../lib/identity.js';
 import { formatSendConfirm, parseMentions } from '../lib/format.js';
+import { touchSentinel } from '../lib/sentinel.js';
 
 const args = process.argv.slice(2);
 function getFlag(name) {
@@ -49,6 +50,30 @@ try {
   });
   // Advance cursor past own message so hooks don't false-trigger
   updateCursor(identity.name, identity.projectPath, room, Number(result.id));
+
+  // Touch sentinel files for fast-path notification
+  try {
+    if (parentId) {
+      // Reply: touch only the parent message author's sentinel
+      const parent = getMessage(parentId);
+      if (parent && parent.from_agent !== identity.name) {
+        touchSentinel(projectHash(parent.from_project), parent.from_agent);
+      }
+    } else {
+      // Broadcast (or DM): touch sentinels for target agents
+      const agents = getOnlineAgents();
+      for (const a of agents) {
+        if (a.name === identity.name && a.project_hash === projectHash(identity.projectPath)) continue;
+        if (toAgent && a.name !== toAgent) continue;
+        const rooms = JSON.parse(a.rooms || '[]');
+        if (!toAgent && !rooms.includes(room)) continue;
+        touchSentinel(a.project_hash, a.name);
+      }
+    }
+  } catch {
+    // Sentinel touching is best-effort
+  }
+
   if (jsonOut) {
     console.log(JSON.stringify({ ok: true, id: Number(result.id), from: identity.name, room, type, parent_id: parentId || null, mentions, priority }));
   } else {

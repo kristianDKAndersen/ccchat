@@ -64,6 +64,7 @@ node scripts/setup.js --name test    # setup current project
 - **Terminal chat UI** — live interactive client for humans (`chat-ui.js`), auto-spawned by poll hook when messages arrive
 - **Session bootstrap** — fast orientation snapshot for new sessions (file tree, git, staleness, decision log)
 - **Decision log integration** — surfaces .decisions/log.yaml dead-ends in bootstrap output
+- **Sentinel fast-path** — `chat-send` touches per-agent sentinel files after insert; `chat-ask` polls sentinels at 500ms for near-instant reply detection (falls back to 3s without sentinel support)
 
 ## Database Schema
 
@@ -108,3 +109,4 @@ node scripts/status.js --raw
 - Message-based knowledge — pins + evidence + search filters instead of separate knowledge table
 - 30s rate limiting in notify.js — prevents repeated banners for the same message
 - 48h TTL on handoff notes — auto-expire stale context
+- Sentinel files (`~/.claude/ccchat/notify/`) — touched by senders, checked by chat-ask for fast-path reply detection without a daemon. Replies touch parent author only; broadcasts touch all online room agents. Best-effort — falls back to polling if sentinels are absent

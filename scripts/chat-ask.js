@@ -2,9 +2,10 @@
 // Post a question and poll for replies.
 // Usage: node chat-ask.js --name <agent> --project <path> --question "<text>" [--room general] [--timeout 120]
 
-import { upsertAgent, insertMessage, getMessagesSince, getThreadReplies, initCursorIfNew, closeDb } from '../lib/db.js';
+import { upsertAgent, insertMessage, getMessagesSince, getThreadReplies, getOnlineAgents, projectHash, initCursorIfNew, closeDb } from '../lib/db.js';
 import { resolveIdentity } from '../lib/identity.js';
 import { formatMessage, formatSendConfirm, parseMentions } from '../lib/format.js';
+import { touchSentinel, isSentinelFresh } from '../lib/sentinel.js';
 
 const args = process.argv.slice(2);
 function getFlag(name) {
@@ -47,13 +48,35 @@ async function main() {
   });
   console.error(`Question posted: id=${questionId}`);
 
-  // Poll for replies
+  // Touch sentinels for online agents in the room so they detect the question faster
+  try {
+    const agents = getOnlineAgents();
+    for (const a of agents) {
+      if (a.name === identity.name && a.project_hash === projectHash(identity.projectPath)) continue;
+      const rooms = JSON.parse(a.rooms || '[]');
+      if (!rooms.includes(room)) continue;
+      touchSentinel(a.project_hash, a.name);
+    }
+  } catch {
+    // Best-effort
+  }
+
+  // Poll for replies — sentinel-aware for fast detection
+  const SENTINEL_POLL_MS = 500;
+  const FALLBACK_POLL_MS = 3000;
   const deadline = Date.now() + timeout * 1000;
   const responses = [];
   let lastCheckedId = Number(questionId);
+  let lastDbCheck = 0; // force immediate first check after initial sleep
 
   while (Date.now() < deadline) {
-    await sleep(3000);
+    await sleep(SENTINEL_POLL_MS);
+
+    // Only query DB if sentinel is fresh or fallback interval elapsed
+    const fresh = isSentinelFresh(identity.projectHash, identity.name, 5000);
+    const elapsed = Date.now() - lastDbCheck;
+    if (!fresh && elapsed < FALLBACK_POLL_MS) continue;
+    lastDbCheck = Date.now();
 
     const replies = getThreadReplies(Number(questionId), room);
     const newReplies = replies.filter(r => r.id > lastCheckedId && r.from_agent !== identity.name);
@@ -71,7 +94,7 @@ async function main() {
 
     // If we have responses and no new ones came in this cycle, wait one more round then stop
     if (responses.length > 0 && newReplies.length === 0) {
-      await sleep(5000);
+      await sleep(FALLBACK_POLL_MS);
       const finalReplies = getThreadReplies(Number(questionId), room).filter(r => r.id > lastCheckedId && r.from_agent !== identity.name);
       for (const m of finalReplies) {
         lastCheckedId = Math.max(lastCheckedId, m.id);
