@@ -2,9 +2,35 @@
 // UserPromptSubmit hook — show unread banner on stderr.
 // Reads DB directly, no server needed.
 
+import { execSync, spawn } from 'child_process';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 import { upsertAgent, getUnreadCountAllRooms, getUnreadMessages, initCursorIfNew, closeDb } from '../lib/db.js';
 import { resolveIdentity } from '../lib/identity.js';
 import { parseMetadata } from '../lib/format.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// Spawn human chat-ui in a new Terminal tab if not already running (macOS only)
+function spawnChatUi() {
+  try {
+    execSync('pgrep -f "chat-ui.js"', { stdio: 'ignore' });
+    return; // already running
+  } catch {
+    // not running — spawn it
+  }
+  try {
+    const chatUiPath = join(__dirname, '..', 'scripts', 'chat-ui.js');
+    spawn('osascript', [
+      '-e', 'tell application "Terminal"',
+      '-e', 'activate',
+      '-e', `do script "node ${chatUiPath} --name human --room general"`,
+      '-e', 'end tell',
+    ], { detached: true, stdio: 'ignore' }).unref();
+  } catch {
+    // Not macOS or osascript unavailable — silently skip
+  }
+}
 
 try {
   const identity = resolveIdentity();
@@ -19,6 +45,7 @@ try {
   for (const c of counts.values()) total += c;
 
   if (total > 0) {
+    spawnChatUi();
     const lines = [`CCCHAT: ${total} new message${total !== 1 ? 's' : ''}`];
     let hasQuestion = false;
 

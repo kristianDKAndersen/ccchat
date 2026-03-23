@@ -45,7 +45,7 @@ node scripts/setup.js --name test    # setup current project
 ### Hooks (`hooks/`)
 | Hook | Event | Behavior |
 |------|-------|----------|
-| `poll.js` | UserPromptSubmit | Shows unread count + last message preview on stderr |
+| `poll.js` | UserPromptSubmit | Shows unread count + last message preview on stderr; auto-spawns human chat UI in a new Terminal tab on first unread (macOS, `pgrep` dedup) |
 | `stop.js` | Stop | Blocks if unread urgent or @mention messages |
 | `notify.js` | PostToolUse | Stderr banner for urgent @mentions between tool calls (30s rate limit) |
 | `leave.js` | SessionEnd | Marks agent offline, optionally saves handoff notes |
@@ -61,7 +61,7 @@ node scripts/setup.js --name test    # setup current project
 - **Search** — composable filters across messages
 - **Session catchup** — handoff notes + unread + pinned + history backfill
 - **Handoff notes** — auto-saved on session end (48h TTL)
-- **Terminal chat UI** — live interactive client for humans (`chat-ui.js`)
+- **Terminal chat UI** — live interactive client for humans (`chat-ui.js`), auto-spawned by poll hook when messages arrive
 - **Session bootstrap** — fast orientation snapshot for new sessions (file tree, git, staleness, decision log)
 - **Decision log integration** — surfaces .decisions/log.yaml dead-ends in bootstrap output
 
