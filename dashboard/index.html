@@ -344,6 +344,61 @@ body {
 
 .load-more button:hover { border-color: var(--accent); color: var(--accent); }
 
+/* ── Input bar ──────────────────────────────────────────────────────── */
+.input-bar {
+  border-top: 1px solid var(--border);
+  background: var(--bg-surface);
+  padding: 8px 12px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.input-bar input {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px 10px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.input-bar input:focus { outline: none; border-color: var(--accent); }
+
+.input-bar button {
+  background: var(--accent);
+  color: var(--bg);
+  border: none;
+  border-radius: 4px;
+  padding: 8px 16px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.input-bar button:hover { opacity: 0.9; }
+
+.reply-indicator {
+  display: none;
+  font-size: 11px;
+  color: var(--text-dim);
+  padding: 4px 12px;
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border);
+}
+
+.reply-indicator.active { display: flex; align-items: center; gap: 8px; }
+
+.reply-indicator .cancel-reply {
+  cursor: pointer;
+  color: var(--red);
+  font-weight: 600;
+}
+
 /* ── Scrollbar ──────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -387,6 +442,14 @@ body {
         <button id="load-more-btn">Load older messages</button>
       </div>
       <div class="feed" id="feed"></div>
+      <div class="reply-indicator" id="reply-indicator">
+        <span id="reply-label">Replying to #</span>
+        <span class="cancel-reply" id="cancel-reply">&times; cancel</span>
+      </div>
+      <div class="input-bar">
+        <input type="text" id="msg-input" placeholder="Type a message... (use @name for mentions)">
+        <button id="send-btn">Send</button>
+      </div>
     </div>
     <div class="thread-panel" id="thread-panel">
       <div class="thread-header">
@@ -462,13 +525,19 @@ function renderMsg(msg, container) {
       <span class="msg-id">#${msg.id}</span>
       <span class="msg-badges">${badges.join('')}</span>
       ${reply}
+      <span class="msg-reply" data-reply-id="${msg.id}" style="margin-left:auto; cursor:pointer; font-size:11px; color:var(--text-dim);">&larr; reply</span>
     </div>
     <div class="${bodyClass}">${highlightMentions(msg.content)}</div>
   `;
 
-  // Thread click handler
-  el.querySelectorAll('.msg-reply').forEach(r => {
+  // Thread click handler (for "reply to #X" links)
+  el.querySelectorAll('[data-thread]').forEach(r => {
     r.addEventListener('click', () => openThread(parseInt(r.dataset.thread, 10)));
+  });
+
+  // Reply button handler
+  el.querySelectorAll('[data-reply-id]').forEach(r => {
+    r.addEventListener('click', () => setReplyTo(parseInt(r.dataset.replyId, 10)));
   });
 
   container.appendChild(el);
@@ -690,6 +759,51 @@ function connectSSE() {
     renderAgents();
   });
 }
+
+// ── Send messages ──────────────────────────────────────────────────────
+
+let replyToId = null;
+
+async function sendMessage() {
+  const input = document.getElementById('msg-input');
+  const text = input.value.trim();
+  if (!text) return;
+
+  const body = { message: text, room: currentRoom };
+  if (replyToId) body.replyTo = replyToId;
+
+  try {
+    const res = await fetch('/api/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) {
+      input.value = '';
+      cancelReply();
+    }
+  } catch {}
+}
+
+function setReplyTo(id) {
+  replyToId = id;
+  const indicator = document.getElementById('reply-indicator');
+  const label = document.getElementById('reply-label');
+  indicator.classList.add('active');
+  label.textContent = `Replying to #${id}`;
+  document.getElementById('msg-input').focus();
+}
+
+function cancelReply() {
+  replyToId = null;
+  document.getElementById('reply-indicator').classList.remove('active');
+}
+
+document.getElementById('send-btn').addEventListener('click', sendMessage);
+document.getElementById('msg-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') sendMessage();
+});
+document.getElementById('cancel-reply').addEventListener('click', cancelReply);
 
 // ── Pinned toggle ──────────────────────────────────────────────────────
 

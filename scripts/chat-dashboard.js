@@ -9,9 +9,11 @@ import { fileURLToPath } from 'url';
 import {
   getHistory, getOnlineAgents, getPinnedMessages, searchMessages,
   getThreadMessages, getAllRooms, getMessagesSinceGlobal, getMessageCount,
+  upsertAgent, insertMessage, initCursorIfNew, updateCursor, getMaxMessageId,
   closeDb
 } from '../lib/db.js';
-import { parseMetadata } from '../lib/format.js';
+import { parseMetadata, parseMentions } from '../lib/format.js';
+import { touchSentinel } from '../lib/sentinel.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -24,6 +26,8 @@ function getFlag(name) {
 
 const PORT = parseInt(getFlag('port') || '3000', 10);
 const HOST = getFlag('host') || 'localhost';
+const SENDER_NAME = getFlag('name') || 'human';
+const SENDER_PROJECT = getFlag('project') || process.cwd();
 
 // Cache HTML at startup
 let html;
@@ -125,9 +129,20 @@ const keepaliveInterval = setInterval(() => {
   broadcast('ping', { time: new Date().toISOString() });
 }, 15000);
 
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    let data = '';
+    req.on('data', chunk => { data += chunk; });
+    req.on('end', () => resolve(data));
+    req.on('error', reject);
+  });
+}
+
 // ── HTTP Server ─────────────────────────────────────────────────────────────
 
-const server = createServer((req, res) => {
+const server = createServer(async (req, res) => {
   const url = req.url;
   const path = url.split('?')[0];
 
@@ -201,6 +216,50 @@ const server = createServer((req, res) => {
       const id = parseInt(params.get('id') || '0', 10);
       if (!id) { jsonResponse(res, [], 400); return; }
       jsonResponse(res, getThreadMessages(id).map(formatMsg));
+      return;
+    }
+
+    // POST /api/send — send a message from the dashboard
+    if (path === '/api/send' && req.method === 'POST') {
+      const body = await readBody(req);
+      const data = JSON.parse(body);
+      const { message, room: sendRoom, replyTo } = data;
+      if (!message) { jsonResponse(res, { error: 'message required' }, 400); return; }
+
+      const targetRoom = sendRoom || 'general';
+      const mentions = parseMentions(message);
+      const metadata = { mentions, priority: data.urgent ? 'urgent' : 'normal' };
+
+      upsertAgent({ name: SENDER_NAME, projectPath: SENDER_PROJECT, rooms: [targetRoom] });
+      initCursorIfNew(SENDER_NAME, SENDER_PROJECT, targetRoom);
+
+      const { id } = insertMessage({
+        type: data.type || 'message',
+        fromAgent: SENDER_NAME,
+        fromProject: SENDER_PROJECT,
+        toAgent: data.to || null,
+        room: targetRoom,
+        content: message,
+        metadata,
+        parentId: replyTo ? parseInt(replyTo, 10) : undefined,
+      });
+
+      // Advance own cursor past this message
+      const maxId = getMaxMessageId(targetRoom);
+      updateCursor(SENDER_NAME, SENDER_PROJECT, targetRoom, maxId);
+
+      // Touch sentinels for online agents
+      try {
+        const { projectHash } = await import('../lib/db.js');
+        const onlineAgents = getOnlineAgents();
+        for (const a of onlineAgents) {
+          if (a.name !== SENDER_NAME) {
+            touchSentinel(a.project_hash || projectHash(a.project_path), a.name);
+          }
+        }
+      } catch { /* sentinel touch is best-effort */ }
+
+      jsonResponse(res, { id, room: targetRoom });
       return;
     }
 
