@@ -7,7 +7,7 @@ import {
   upsertAgent, insertMessage, getMessagesSince, getHistory, getOnlineAgents,
   updateCursor, initCursorIfNew, getMaxMessageId, pinMessage, unpinMessage,
   getPinnedMessages, searchMessages, setAgentOffline, getUnreadCountAllRooms,
-  closeDb, projectHash,
+  getMessage, closeDb, projectHash,
 } from '../lib/db.js';
 import { formatMessage, parseMentions, parseMetadata } from '../lib/format.js';
 import { resolveIdentity } from '../lib/identity.js';
@@ -51,10 +51,28 @@ function nameColor(name) {
 
 // ── Colorized message formatter ──────────────────────────────────────────────
 
-function colorMessage(msg) {
+// prevFrom: if set and matches current author, render compact (no header)
+function colorMessage(msg, { prevFrom = null } = {}) {
   const from = msg.from || msg.from_agent;
   const time = (msg.created_at || '').slice(11, 16);
   const meta = parseMetadata(msg.metadata);
+  const content = (msg.content || '').split('\n').map(l => `    ${l}`).join('\n');
+
+  // Reply line: show parent author name instead of raw ID
+  let replyLine = '';
+  if (msg.parent_id) {
+    let parentAuthor = `#${msg.parent_id}`;
+    try {
+      const parent = getMessage(msg.parent_id);
+      if (parent) parentAuthor = parent.from_agent;
+    } catch {}
+    replyLine = `\n  ${DIM}↳ replying to ${parentAuthor}${RESET}`;
+  }
+
+  // Compact mode: same author as previous message, skip full header
+  if (prevFrom && prevFrom === from && !msg.pinned && meta.priority !== 'urgent') {
+    return `${GRAY}  #${msg.id} ${DIM}(${time})${RESET}${replyLine}\n${content}\n`;
+  }
 
   const nc = nameColor(from);
   const urgentTag = meta.priority === 'urgent' ? ` ${BOLD}${RED}[URGENT]${RESET}` : '';
@@ -64,14 +82,13 @@ function colorMessage(msg) {
   const evidenceTag = meta.evidence ? ' [verified]' : '';
 
   const header = `${GRAY}#${msg.id}${RESET} ${nc}${BOLD}${from}${RESET}${pinnedTag}${urgentTag}${taskStatus}${evidenceTag}${typeTag} ${DIM}(${time})${RESET}`;
-  const replyLine = msg.parent_id ? `\n  ${DIM}↳ reply to #${msg.parent_id}${RESET}` : '';
-  const content = (msg.content || '').split('\n').map(l => `    ${l}`).join('\n');
   return `${header}${replyLine}\n${content}\n`;
 }
 
 // ── State ────────────────────────────────────────────────────────────────────
 
 let lastSeenId = 0;
+let lastRenderedFrom = null; // tracks last rendered author for compact grouping
 let pollTimer = null;
 let statusTimer = null;
 let rl = null;
@@ -117,11 +134,16 @@ function promptStr() {
 function poll() {
   try {
     const msgs = getMessagesSince(lastSeenId, currentRoom);
-    for (const msg of msgs) {
-      writeAbove(colorMessage(msg));
-      lastSeenId = msg.id;
-    }
     if (msgs.length > 0) {
+      // Batch render: build all messages into one string, single writeAbove call
+      const lines = [];
+      for (const msg of msgs) {
+        const from = msg.from || msg.from_agent;
+        lines.push(colorMessage(msg, { prevFrom: lastRenderedFrom }));
+        lastRenderedFrom = from;
+        lastSeenId = msg.id;
+      }
+      writeAbove(lines.join(''));
       updateCursor(identity.name, identity.projectPath, currentRoom, lastSeenId);
     }
     // Keep agent online
@@ -226,9 +248,12 @@ function handleCommand(line) {
       // Clear and show backfill
       process.stdout.write(`${ESC}2J${ESC}H`);
       drawStatusBar();
+      lastRenderedFrom = null;
       const { messages } = getHistory(currentRoom, 30);
       for (const msg of messages) {
-        process.stdout.write(colorMessage(msg) + '\n');
+        const from = msg.from || msg.from_agent;
+        process.stdout.write(colorMessage(msg, { prevFrom: lastRenderedFrom }) + '\n');
+        lastRenderedFrom = from;
       }
       lastSeenId = messages.length ? messages[messages.length - 1].id : getMaxMessageId(currentRoom);
       updateCursor(identity.name, identity.projectPath, currentRoom, lastSeenId);
@@ -276,7 +301,14 @@ function handleCommand(line) {
       if (messages.length === 0) {
         systemMsg('No messages in this room.');
       } else {
-        for (const msg of messages) writeAbove(colorMessage(msg));
+        let prevFrom = null;
+        const lines = [];
+        for (const msg of messages) {
+          const from = msg.from || msg.from_agent;
+          lines.push(colorMessage(msg, { prevFrom }));
+          prevFrom = from;
+        }
+        writeAbove(lines.join(''));
       }
       break;
     }
@@ -382,10 +414,12 @@ function main() {
   process.stdout.write(`${ESC}2J${ESC}H`);
   drawStatusBar();
 
-  // Backfill last 30 messages
+  // Backfill last 30 messages with compact grouping
   const { messages: backfill } = getHistory(currentRoom, 30);
   for (const msg of backfill) {
-    process.stdout.write(colorMessage(msg) + '\n');
+    const from = msg.from || msg.from_agent;
+    process.stdout.write(colorMessage(msg, { prevFrom: lastRenderedFrom }) + '\n');
+    lastRenderedFrom = from;
   }
   lastSeenId = backfill.length ? backfill[backfill.length - 1].id : getMaxMessageId(currentRoom);
   updateCursor(identity.name, identity.projectPath, currentRoom, lastSeenId);

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Browse past messages (read-only, no cursor changes).
-// Usage: node chat-history.js --room <room> [--last <N>] [--before <id>] [--json]
+// Usage: node chat-history.js --room <room> [--last <N>] [--before <id>] [--thread <id>] [--json]
 
-import { getHistory, closeDb } from '../lib/db.js';
+import { getHistory, getThreadMessages, closeDb } from '../lib/db.js';
 import { formatMessage, formatHistoryHeader, formatHistoryFooter, parseMetadata } from '../lib/format.js';
 
 const args = process.argv.slice(2);
@@ -16,11 +16,11 @@ const room = getFlag('room') || 'general';
 const last = parseInt(getFlag('last') || '20', 10);
 const beforeRaw = getFlag('before');
 const beforeId = beforeRaw ? parseInt(beforeRaw, 10) : null;
+const threadRaw = getFlag('thread');
+const threadId = threadRaw ? parseInt(threadRaw, 10) : null;
 const jsonOut = args.includes('--json');
 
-try {
-  const { messages, has_more } = getHistory(room, last, beforeId);
-
+function formatOutput(messages, hasMore, label) {
   if (jsonOut) {
     const formatted = messages.map(m => {
       const meta = parseMetadata(m.metadata);
@@ -35,17 +35,29 @@ try {
         created_at: m.created_at,
       };
     });
-    console.log(JSON.stringify({ room, messages: formatted, has_more }, null, 2));
+    console.log(JSON.stringify({ room: label, messages: formatted, has_more: hasMore }, null, 2));
   } else {
     if (messages.length === 0) {
-      console.log(`No messages in [${room}]`);
+      console.log(`No messages in [${label}]`);
     } else {
-      console.log(formatHistoryHeader(room, messages[0].id, messages[messages.length - 1].id));
+      console.log(formatHistoryHeader(label, messages[0].id, messages[messages.length - 1].id));
       for (const m of messages) {
         console.log(formatMessage(m));
       }
-      console.log(formatHistoryFooter(has_more, messages[0].id));
+      if (hasMore) {
+        console.log(formatHistoryFooter(hasMore, messages[0].id));
+      }
     }
+  }
+}
+
+try {
+  if (threadId) {
+    const messages = getThreadMessages(threadId, last);
+    formatOutput(messages, false, `thread #${threadId}`);
+  } else {
+    const { messages, has_more } = getHistory(room, last, beforeId);
+    formatOutput(messages, has_more, room);
   }
 } finally {
   closeDb();

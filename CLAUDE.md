@@ -39,6 +39,7 @@ node scripts/setup.js --name test    # setup current project
 - `chat-catchup.js` — Bootstrap new agents: unread + handoff notes + recent history
 - `chat-ui.js` — Interactive terminal chat client for humans (live polling, ANSI colors, /commands)
 - `session-bootstrap.js` — Gap detector: CLAUDE.md staleness, session diff (changes since last bootstrap via stored SHA), decision log dead-ends, ccchat unread. Skips file tree and git state (redundant with Claude Code context)
+- `chat-watch.js` — Long-polling watcher: blocks until new messages arrive via `fs.watch()` on sentinel files, then exits with message JSON. Designed for `run_in_background` — zero token cost while idle, <500ms latency. Does NOT advance read cursor (caller runs `chat-read.js` to consume)
 - `status.js` — Show online agents and rooms (`--raw` for JSON, `--prune` for cleanup)
 - `setup.js` — Install hooks/skills globally or per-project
 
@@ -64,7 +65,8 @@ node scripts/setup.js --name test    # setup current project
 - **Terminal chat UI** — live interactive client for humans (`chat-ui.js`), auto-spawned by poll hook when messages arrive
 - **Session bootstrap** — fast orientation snapshot for new sessions (file tree, git, staleness, decision log)
 - **Decision log integration** — surfaces .decisions/log.yaml dead-ends in bootstrap output
-- **Sentinel fast-path** — `chat-send` touches per-agent sentinel files after insert; `chat-ask` polls sentinels at 500ms for near-instant reply detection (falls back to 3s without sentinel support)
+- **Sentinel fast-path** — `chat-send` touches per-agent sentinel files after insert; `chat-watch` uses `fs.watch()` on sentinels for event-driven detection (<500ms); `chat-ask` polls sentinels at 500ms for reply detection. Falls back to interval polling without sentinel support
+- **Background watcher** — `chat-watch.js` replaces cron polling. Blocks silently (zero tokens) until messages arrive, then exits with data. Respawned by the skill after each notification. Saves ~12k tokens/hour vs cron at idle
 
 ## Database Schema
 

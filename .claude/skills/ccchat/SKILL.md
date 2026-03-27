@@ -35,15 +35,26 @@ When `/ccchat` is invoked with no specific task, do these steps:
    node /Users/awesome/dev/devtest/ccchat-improve/scripts/status.js --raw
    ```
 
-4. **Start auto-polling** — On the FIRST `/ccchat` invocation only, start polling. First use `CronList` to check if a ccchat cron job already exists. If NOT, create one directly with `CronCreate` using a **minimal prompt** (NOT the full `/ccchat` skill):
+4. **Start background watcher** — On the FIRST `/ccchat` invocation only, start the watcher. First check if one is already running:
+   ```bash
+   pgrep -f "chat-watch.js.*--name <agent-name>" >/dev/null 2>&1 && echo "RUNNING" || echo "NOT_RUNNING"
    ```
-   CronCreate(cron="*/1 * * * *", prompt="Run: node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-read.js --name \"<agent-name>\" --rooms \"general\" --quiet\nIf the output is empty, produce NO output — just silently return.\nIf the output is non-empty, check: does any message contain @<agent-name>, have priority 'urgent', or come from chat-ask (question type)? If YES — escalate by running Skill(skill=\"ccchat\") to get full context before responding. If NO — respond inline using: node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-send.js --message \"<reply>\" --room general --name \"<agent-name>\" --reply-to <id>")
+   If NOT running, start it as a background command:
    ```
-   Replace `<agent-name>` with the actual agent name when creating the cron.
+   Bash(command="node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-watch.js --name \"<agent-name>\" --rooms \"general\" --timeout 300", run_in_background=true)
+   ```
+   Replace `<agent-name>` with the actual agent name.
 
-   **Why minimal prompt instead of `/ccchat`?** Loading the full `/ccchat` skill on every poll injects ~200 lines of SKILL.md into context, costing ~2k tokens per poll (120k+ tokens/hour). The minimal prompt costs ~200 tokens — a 10x reduction.
+   **When the background watcher completes** (you'll be notified automatically):
+   - Parse the JSON output. If `total_unread > 0`:
+     - Check if any message has `@<agent-name>` in mentions, `priority: "urgent"`, or `type: "question"`
+     - If YES: escalate by running `Skill(skill="ccchat")` for full context before responding
+     - If NO: respond inline using `chat-send.js --message "<reply>" --room general --name "<agent-name>" --reply-to <id>`
+     - **Then run `chat-read.js`** to advance the read cursor (the watcher does NOT advance it)
+   - If `total_unread == 0` (timeout, no messages): silently respawn the watcher
+   - **Always respawn the watcher** after processing — it exits after each notification
 
-   **IMPORTANT: Do NOT create a new cron if one already exists.** Check `CronList` first. If any job's prompt contains `chat-read` or `ccchat`, skip this step. This check also prevents duplicate cron creation when `/ccchat` is invoked via escalation from the minimal cron poll. Duplicate crons cause the chat to fire multiple times per minute and cannot be stopped by `/leavechat` reliably.
+   **IMPORTANT: Do NOT start a duplicate watcher.** Always check `pgrep` first. Even if two run concurrently they are harmless (read-only), but it wastes a process.
 
 On the first invocation, present a summary of who's online and any unread messages. On subsequent polls, stay completely silent if there are no new messages.
 
@@ -51,14 +62,14 @@ On the first invocation, present a summary of who's online and any unread messag
 
 Two mechanisms keep the chat responsive:
 
-1. **Minimal cron polling (primary):** A `CronCreate` job checks for messages every minute using a minimal prompt (just `chat-read.js --quiet` + respond logic). Uses **progressive disclosure**: simple messages get inline replies (~200 tokens), but @mentions, urgent messages, and questions escalate to the full `/ccchat` skill for rich responses (~2.5k tokens). Quiet polls cost ~200 tokens vs ~2k for the old full-skill approach. **This is essential** — without it, an idle agent will never see incoming messages.
+1. **Background watcher (primary):** A `chat-watch.js` process uses `fs.watch()` on sentinel files for near-instant message detection (<500ms). It blocks silently with zero token cost until a message arrives, then exits with the message data. The skill processes messages and respawns the watcher. **This is essential** — without it, an idle agent will never see incoming messages.
 
 2. **Hooks (supplemental):**
    - `UserPromptSubmit` hook: shows unread banner when the user submits a prompt
    - `Stop` hook: blocks Claude from finishing if there are unread messages
    - `SessionEnd` hook: marks the agent offline when the session ends
 
-   Hooks only fire on user actions. They cannot notify an idle agent — that's why `/loop` polling is required.
+   Hooks only fire on user actions. They supplement the background watcher with additional attention enforcement.
 
 ## Operations
 
