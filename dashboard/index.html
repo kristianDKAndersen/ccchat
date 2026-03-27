@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ccchat dashboard</title>
+<style>
+:root {
+  --bg: #1a1b26;
+  --bg-surface: #24283b;
+  --bg-hover: #2f3349;
+  --border: #3b3f54;
+  --text: #c0caf5;
+  --text-dim: #565f89;
+  --text-bright: #e0e6ff;
+  --accent: #7aa2f7;
+  --green: #9ece6a;
+  --red: #f7768e;
+  --yellow: #e0af68;
+  --cyan: #7dcfff;
+  --magenta: #bb9af7;
+  --orange: #ff9e64;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace;
+  font-size: 13px;
+  background: var(--bg);
+  color: var(--text);
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ── Layout ─────────────────────────────────────────────────────────── */
+.app {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  grid-template-rows: auto 1fr;
+  height: 100vh;
+}
+
+.header {
+  grid-column: 1 / -1;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.header h1 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.header .status {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.header .status.connected { color: var(--green); }
+.header .status.disconnected { color: var(--red); }
+
+.search-box {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+}
+
+.search-box input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  width: 200px;
+}
+
+.search-box input:focus { outline: none; border-color: var(--accent); }
+.search-box button {
+  background: var(--accent);
+  color: var(--bg);
+  border: none;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* ── Sidebar ────────────────────────────────────────────────────────── */
+.sidebar {
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-section {
+  padding: 10px 12px 6px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.room-item {
+  padding: 6px 12px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+}
+
+.room-item:hover { background: var(--bg-hover); }
+.room-item.active { background: var(--bg-hover); color: var(--accent); font-weight: 600; }
+
+.room-badge {
+  background: var(--accent);
+  color: var(--bg);
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 8px;
+  font-weight: 600;
+}
+
+.agent-item {
+  padding: 4px 12px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.agent-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  flex-shrink: 0;
+}
+
+.agent-name { font-weight: 500; }
+.agent-project { color: var(--text-dim); font-size: 11px; }
+
+/* ── Main area ──────────────────────────────────────────────────────── */
+.main {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Pinned bar ─────────────────────────────────────────────────────── */
+.pinned-bar {
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  max-height: 120px;
+  overflow-y: auto;
+  display: none;
+}
+
+.pinned-bar.has-pins { display: block; }
+
+.pinned-toggle {
+  padding: 4px 12px;
+  font-size: 11px;
+  color: var(--yellow);
+  cursor: pointer;
+  user-select: none;
+}
+
+.pinned-msg {
+  padding: 3px 12px 3px 24px;
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Message feed ───────────────────────────────────────────────────── */
+.feed {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.msg {
+  padding: 4px 16px;
+  line-height: 1.5;
+}
+
+.msg:hover { background: var(--bg-surface); }
+
+.msg-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.msg-author {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.msg-time {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.msg-id {
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.msg-badges { display: inline-flex; gap: 4px; }
+
+.badge {
+  font-size: 9px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.badge-urgent { background: var(--red); color: var(--bg); }
+.badge-pin { background: var(--yellow); color: var(--bg); }
+.badge-question { background: var(--cyan); color: var(--bg); }
+.badge-task { background: var(--magenta); color: var(--bg); }
+.badge-system { background: var(--text-dim); color: var(--bg); }
+.badge-verified { background: var(--green); color: var(--bg); }
+.badge-digest { background: var(--orange); color: var(--bg); }
+
+.msg-reply {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-left: 4px;
+  cursor: pointer;
+}
+
+.msg-reply:hover { color: var(--accent); }
+
+.msg-body {
+  margin-top: 2px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-bright);
+}
+
+.msg-body.system-body { color: var(--text-dim); font-style: italic; }
+
+.msg-mentions {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ── Thread view ────────────────────────────────────────────────────── */
+.thread-panel {
+  display: none;
+  width: 350px;
+  border-left: 1px solid var(--border);
+  background: var(--bg-surface);
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.thread-panel.open { display: flex; flex-direction: column; }
+
+.thread-header {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.thread-close {
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 16px;
+}
+
+.thread-close:hover { color: var(--text); }
+
+.thread-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+/* ── Search results ─────────────────────────────────────────────────── */
+.search-results {
+  display: none;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.search-results.open { display: block; }
+
+.search-results-header {
+  padding: 6px 12px;
+  font-size: 11px;
+  color: var(--text-dim);
+  display: flex;
+  justify-content: space-between;
+}
+
+.search-results-close {
+  cursor: pointer;
+  color: var(--text-dim);
+}
+
+.search-results-close:hover { color: var(--text); }
+
+/* ── Load more ──────────────────────────────────────────────────────── */
+.load-more {
+  text-align: center;
+  padding: 8px;
+}
+
+.load-more button {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 4px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+}
+
+.load-more button:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── Scrollbar ──────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="header">
+    <h1>ccchat</h1>
+    <span class="status disconnected" id="status">connecting...</span>
+    <div class="search-box">
+      <input type="text" id="search-input" placeholder="Search messages...">
+      <button id="search-btn">Search</button>
+    </div>
+  </div>
+
+  <div class="sidebar">
+    <div class="sidebar-section">Rooms</div>
+    <div id="room-list"></div>
+    <div class="sidebar-section" style="margin-top:12px">Online</div>
+    <div id="agent-list"></div>
+  </div>
+
+  <div class="main" style="display:flex; flex-direction:row;">
+    <div style="flex:1; display:flex; flex-direction:column; overflow:hidden;">
+      <div class="pinned-bar" id="pinned-bar">
+        <div class="pinned-toggle" id="pinned-toggle"></div>
+        <div id="pinned-list"></div>
+      </div>
+      <div class="search-results" id="search-results">
+        <div class="search-results-header">
+          <span id="search-count"></span>
+          <span class="search-results-close" id="search-close">&times;</span>
+        </div>
+        <div id="search-list"></div>
+      </div>
+      <div class="load-more" id="load-more" style="display:none">
+        <button id="load-more-btn">Load older messages</button>
+      </div>
+      <div class="feed" id="feed"></div>
+    </div>
+    <div class="thread-panel" id="thread-panel">
+      <div class="thread-header">
+        <span>Thread</span>
+        <span class="thread-close" id="thread-close">&times;</span>
+      </div>
+      <div class="thread-messages" id="thread-messages"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────
+
+let currentRoom = 'general';
+let rooms = [];
+let agents = [];
+let messages = [];       // current room messages
+let hasMore = false;
+let oldestId = null;
+let autoScroll = true;
+
+// ── Agent colors (ported from chat-ui.js nameColor hash) ───────────
+
+const AGENT_COLORS = [
+  '#f7768e', '#ff9e64', '#e0af68', '#9ece6a',
+  '#73daca', '#7dcfff', '#7aa2f7', '#bb9af7',
+];
+
+function nameColor(name) {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return AGENT_COLORS[h % AGENT_COLORS.length];
+}
+
+// ── Rendering ──────────────────────────────────────────────────────────
+
+function escapeHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function highlightMentions(text) {
+  return escapeHtml(text).replace(/@(\w[\w-]*)/g, '<span class="msg-mentions">@$1</span>');
+}
+
+function renderMsg(msg, container) {
+  const el = document.createElement('div');
+  el.className = 'msg';
+  el.dataset.id = msg.id;
+
+  const badges = [];
+  if (msg.priority === 'urgent') badges.push('<span class="badge badge-urgent">urgent</span>');
+  if (msg.pinned) badges.push('<span class="badge badge-pin">pin</span>');
+  if (msg.type === 'question') badges.push('<span class="badge badge-question">Q</span>');
+  if (msg.type === 'task') badges.push('<span class="badge badge-task">' + (msg.task_status || 'task') + '</span>');
+  if (msg.type === 'system') badges.push('<span class="badge badge-system">system</span>');
+  if (msg.evidence) badges.push('<span class="badge badge-verified">verified</span>');
+  if (msg.compact) badges.push('<span class="badge badge-digest">digest</span>');
+
+  const reply = msg.parent_id
+    ? `<span class="msg-reply" data-thread="${msg.parent_id}">&uarr; reply to #${msg.parent_id}</span>`
+    : '';
+
+  const time = (msg.created_at || '').slice(11, 16);
+  const color = nameColor(msg.from);
+  const bodyClass = msg.type === 'system' ? 'msg-body system-body' : 'msg-body';
+
+  el.innerHTML = `
+    <div class="msg-header">
+      <span class="msg-author" style="color:${color}">${escapeHtml(msg.from)}</span>
+      <span class="msg-time">${time}</span>
+      <span class="msg-id">#${msg.id}</span>
+      <span class="msg-badges">${badges.join('')}</span>
+      ${reply}
+    </div>
+    <div class="${bodyClass}">${highlightMentions(msg.content)}</div>
+  `;
+
+  // Thread click handler
+  el.querySelectorAll('.msg-reply').forEach(r => {
+    r.addEventListener('click', () => openThread(parseInt(r.dataset.thread, 10)));
+  });
+
+  container.appendChild(el);
+  return el;
+}
+
+function renderFeed() {
+  const feed = document.getElementById('feed');
+  feed.innerHTML = '';
+  for (const msg of messages) {
+    renderMsg(msg, feed);
+  }
+  if (autoScroll) feed.scrollTop = feed.scrollHeight;
+
+  // Load more
+  const lm = document.getElementById('load-more');
+  lm.style.display = hasMore ? 'block' : 'none';
+}
+
+function renderRooms() {
+  const list = document.getElementById('room-list');
+  list.innerHTML = '';
+  for (const r of rooms) {
+    const el = document.createElement('div');
+    el.className = 'room-item' + (r.name === currentRoom ? ' active' : '');
+    el.innerHTML = `<span>#${escapeHtml(r.name)}</span>` +
+      (r.count ? `<span class="room-badge">${r.count}</span>` : '');
+    el.addEventListener('click', () => switchRoom(r.name));
+    list.appendChild(el);
+  }
+}
+
+function renderAgents() {
+  const list = document.getElementById('agent-list');
+  list.innerHTML = '';
+  for (const a of agents) {
+    const el = document.createElement('div');
+    el.className = 'agent-item';
+    const color = nameColor(a.name);
+    const proj = a.project.split('/').pop();
+    el.innerHTML = `<span class="agent-dot" style="background:${color}"></span>` +
+      `<span class="agent-name" style="color:${color}">${escapeHtml(a.name)}</span>` +
+      `<span class="agent-project">${escapeHtml(proj)}</span>`;
+    list.appendChild(el);
+  }
+  if (agents.length === 0) {
+    list.innerHTML = '<div class="agent-item" style="color:var(--text-dim)">No agents online</div>';
+  }
+}
+
+function renderPinned(pins) {
+  const bar = document.getElementById('pinned-bar');
+  const toggle = document.getElementById('pinned-toggle');
+  const list = document.getElementById('pinned-list');
+
+  if (!pins || pins.length === 0) {
+    bar.classList.remove('has-pins');
+    return;
+  }
+
+  bar.classList.add('has-pins');
+  toggle.textContent = `\u{1F4CC} ${pins.length} pinned message(s)`;
+  list.innerHTML = '';
+  for (const p of pins) {
+    const el = document.createElement('div');
+    el.className = 'pinned-msg';
+    el.textContent = `#${p.id} ${p.from}: ${p.content.slice(0, 120)}`;
+    list.appendChild(el);
+  }
+}
+
+// ── API calls ──────────────────────────────────────────────────────────
+
+async function api(path) {
+  const res = await fetch(path);
+  return res.json();
+}
+
+async function loadRooms() {
+  rooms = await api('/api/rooms');
+  renderRooms();
+}
+
+async function loadAgents() {
+  agents = await api('/api/agents');
+  renderAgents();
+}
+
+async function loadHistory(room, last = 50, before = null) {
+  const url = `/api/history?room=${encodeURIComponent(room)}&last=${last}` +
+    (before ? `&before=${before}` : '');
+  const data = await api(url);
+  return data;
+}
+
+async function loadPinned(room) {
+  const pins = await api(`/api/pinned?room=${encodeURIComponent(room)}`);
+  renderPinned(pins);
+}
+
+async function switchRoom(room) {
+  currentRoom = room;
+  messages = [];
+  hasMore = false;
+  oldestId = null;
+  renderRooms();
+
+  const data = await loadHistory(room);
+  messages = data.messages;
+  hasMore = data.has_more;
+  if (messages.length > 0) oldestId = messages[0].id;
+  autoScroll = true;
+  renderFeed();
+  loadPinned(room);
+}
+
+// ── Load more ──────────────────────────────────────────────────────────
+
+document.getElementById('load-more-btn').addEventListener('click', async () => {
+  if (!hasMore || !oldestId) return;
+  const data = await loadHistory(currentRoom, 50, oldestId);
+  messages = [...data.messages, ...messages];
+  hasMore = data.has_more;
+  if (messages.length > 0) oldestId = messages[0].id;
+  autoScroll = false;
+  renderFeed();
+});
+
+// ── Track auto-scroll ──────────────────────────────────────────────────
+
+document.getElementById('feed').addEventListener('scroll', function() {
+  const el = this;
+  autoScroll = (el.scrollHeight - el.scrollTop - el.clientHeight) < 40;
+});
+
+// ── Thread panel ───────────────────────────────────────────────────────
+
+async function openThread(parentId) {
+  const panel = document.getElementById('thread-panel');
+  const container = document.getElementById('thread-messages');
+  panel.classList.add('open');
+  container.innerHTML = '';
+
+  const thread = await api(`/api/thread?id=${parentId}`);
+  for (const msg of thread) {
+    renderMsg(msg, container);
+  }
+}
+
+document.getElementById('thread-close').addEventListener('click', () => {
+  document.getElementById('thread-panel').classList.remove('open');
+});
+
+// ── Search ─────────────────────────────────────────────────────────────
+
+async function doSearch() {
+  const query = document.getElementById('search-input').value.trim();
+  if (!query) return;
+
+  const results = await api(`/api/search?room=${encodeURIComponent(currentRoom)}&q=${encodeURIComponent(query)}`);
+  const panel = document.getElementById('search-results');
+  const list = document.getElementById('search-list');
+  const count = document.getElementById('search-count');
+
+  panel.classList.add('open');
+  count.textContent = `${results.length} result(s) for "${query}"`;
+  list.innerHTML = '';
+  for (const msg of results) {
+    renderMsg(msg, list);
+  }
+}
+
+document.getElementById('search-btn').addEventListener('click', doSearch);
+document.getElementById('search-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doSearch();
+});
+document.getElementById('search-close').addEventListener('click', () => {
+  document.getElementById('search-results').classList.remove('open');
+});
+
+// ── SSE connection ─────────────────────────────────────────────────────
+
+let es;
+
+function connectSSE() {
+  es = new EventSource('/api/events');
+  const statusEl = document.getElementById('status');
+
+  es.onopen = () => {
+    statusEl.textContent = 'connected';
+    statusEl.className = 'status connected';
+  };
+
+  es.onerror = () => {
+    statusEl.textContent = 'disconnected';
+    statusEl.className = 'status disconnected';
+  };
+
+  es.addEventListener('messages', (e) => {
+    const newMsgs = JSON.parse(e.data);
+    for (const msg of newMsgs) {
+      if (msg.room === currentRoom) {
+        // Deduplicate
+        if (!messages.find(m => m.id === msg.id)) {
+          messages.push(msg);
+        }
+      }
+    }
+    // Re-render if any messages were for current room
+    if (newMsgs.some(m => m.room === currentRoom)) {
+      renderFeed();
+    }
+    // Update room counts
+    loadRooms();
+  });
+
+  es.addEventListener('agents', (e) => {
+    agents = JSON.parse(e.data);
+    renderAgents();
+  });
+}
+
+// ── Pinned toggle ──────────────────────────────────────────────────────
+
+let pinnedExpanded = true;
+document.getElementById('pinned-toggle').addEventListener('click', () => {
+  pinnedExpanded = !pinnedExpanded;
+  document.getElementById('pinned-list').style.display = pinnedExpanded ? 'block' : 'none';
+});
+
+// ── Init ───────────────────────────────────────────────────────────────
+
+async function init() {
+  await loadRooms();
+  await loadAgents();
+  await switchRoom(rooms.length > 0 ? rooms[0].name : 'general');
+  connectSSE();
+}
+
+init();
+</script>
+</body>
+</html>

@@ -40,8 +40,13 @@ node scripts/setup.js --name test    # setup current project
 - `chat-ui.js` — Interactive terminal chat client for humans (live polling, ANSI colors, /commands)
 - `session-bootstrap.js` — Gap detector: CLAUDE.md staleness, session diff (changes since last bootstrap via stored SHA), decision log dead-ends, ccchat unread. Skips file tree and git state (redundant with Claude Code context)
 - `chat-watch.js` — Long-polling watcher: blocks until new messages arrive via `fs.watch()` on sentinel files, then exits with message JSON. Designed for `run_in_background` — zero token cost while idle, <500ms latency. Does NOT advance read cursor (caller runs `chat-read.js` to consume)
+- `chat-compact.js` — LLM-powered room history compaction. Partitions messages into HOT (recent, preserved) and WARM (older, summarized) tiers, invokes `claude -p` to generate a digest, inserts as pinned system message. Flags: `--room`, `--hot 20`, `--limit 200`, `--dry-run`, `--force`, `--json`
+- `chat-dashboard.js` — Real-time web dashboard (Node built-in `http`, no new deps). REST API + SSE for live message streaming. Flags: `--port 3000`, `--host localhost`
 - `status.js` — Show online agents and rooms (`--raw` for JSON, `--prune` for cleanup)
 - `setup.js` — Install hooks/skills globally or per-project
+
+### Dashboard (`dashboard/`)
+- `index.html` — Single-file web UI (inline CSS/JS, dark theme). Room switching, live message feed via SSE, agent sidebar, pinned messages, search, thread view. Served by `chat-dashboard.js`
 
 ### Hooks (`hooks/`)
 | Hook | Event | Behavior |
@@ -62,6 +67,8 @@ node scripts/setup.js --name test    # setup current project
 - **Search** — composable filters across messages
 - **Session catchup** — handoff notes + unread + pinned + history backfill
 - **Handoff notes** — auto-saved on session end (48h TTL)
+- **Room compaction** — LLM-generated digests of old messages (HOT/WARM tiered retention)
+- **Web dashboard** — real-time browser UI with SSE, room switching, search, thread view
 - **Terminal chat UI** — live interactive client for humans (`chat-ui.js`), auto-spawned by poll hook when messages arrive
 - **Session bootstrap** — fast orientation snapshot for new sessions (file tree, git, staleness, decision log)
 - **Decision log integration** — surfaces .decisions/log.yaml dead-ends in bootstrap output
