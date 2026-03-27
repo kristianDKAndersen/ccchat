@@ -1,8 +1,8 @@
 # ccchat
 
-Serverless multi-agent peer chat for Claude Code sessions. SQLite (WAL mode) is the entire message bus — no server, no background watcher, no notification files.
+Serverless multi-agent peer chat for Claude Code sessions. SQLite (WAL mode) is the entire message bus — no server, no daemon, no notification files.
 
-Agents in separate Claude Code sessions communicate through a shared SQLite database. Hooks provide real-time notifications. One dependency: `better-sqlite3`.
+Agents in separate Claude Code sessions communicate through a shared SQLite database. Hooks provide real-time notifications. A background watcher (`chat-watch.js`) uses `fs.watch()` on sentinel files for near-instant message detection (<500ms latency, zero token cost while idle). One dependency: `better-sqlite3`.
 
 ## Features
 
@@ -18,8 +18,10 @@ Agents in separate Claude Code sessions communicate through a shared SQLite data
 
 **Human Participation**
 - Interactive terminal chat UI — live message feed with ANSI colors
+- Compact same-author grouping (consecutive messages skip redundant headers)
+- Human-readable reply context (`↳ replying to maestro` instead of raw IDs)
+- Batch rendering eliminates visual jumping during message bursts
 - Tab completion for /commands and @mentions
-- All chat features accessible via slash commands
 
 **Collaboration**
 - `@mentions` — auto-parsed from message text
@@ -30,6 +32,7 @@ Agents in separate Claude Code sessions communicate through a shared SQLite data
 
 **Intelligence**
 - Search with composable filters (`--pinned`, `--verified`, `--by <agent>`)
+- Thread-aware history — `--thread <id>` walks the full reply subtree (recursive CTE)
 - Session catchup — handoff notes, unread, pinned, history backfill
 - Handoff notes — auto-saved on session end (48h TTL)
 
@@ -83,8 +86,10 @@ Advances the read cursor. Flags: `--name`, `--project`, `--rooms`, `--limit`, `-
 ```bash
 node scripts/chat-history.js --room general --last 20
 node scripts/chat-history.js --room general --last 10 --before 50
+node scripts/chat-history.js --thread 1181 --last 50        # full reply subtree
+node scripts/chat-history.js --thread 1181 --json            # thread as JSON
 ```
-Read-only, no cursor change. Flags: `--room`, `--last`, `--before`, `--json`
+Read-only, no cursor change. `--thread <id>` walks all descendants of a message using a recursive CTE — useful for reviewing debates or extracting decision threads. Flags: `--room`, `--last`, `--before`, `--thread`, `--json`
 
 ### chat-ask.js — Post question, poll for replies
 ```bash
@@ -122,6 +127,12 @@ node scripts/chat-catchup.js --name mybot --rooms general --budget 50
 ```
 Shows (in order): handoff notes, pinned messages, unread messages, history backfill. Flags: `--name`, `--project`, `--rooms`, `--budget`, `--json`, `--compact`
 
+### chat-watch.js — Background message watcher
+```bash
+node scripts/chat-watch.js --name mybot --rooms general --timeout 300
+```
+Long-polling watcher designed for Claude Code's `run_in_background`. Blocks silently (zero token cost) until new messages arrive via `fs.watch()` on sentinel files, then exits with message JSON. The skill respawns the watcher after each notification. Falls back to 30s interval polling if `fs.watch()` is unavailable. Flags: `--name`, `--project`, `--rooms`, `--timeout`
+
 ### status.js — Show online agents
 ```bash
 node scripts/status.js --raw
@@ -135,10 +146,13 @@ node scripts/chat-ui.js --name human --project /path  # explicit project
 ```
 Live terminal UI for humans to participate in agent conversations. Features:
 - Real-time message feed (1.5s polling) with ANSI colors
+- Batch rendering — multiple messages per poll cycle render as one block (no visual jumping)
+- Compact same-author grouping — consecutive messages from the same agent show minimal headers
+- Reply context shows author name (`↳ replying to maestro`) instead of raw message IDs
 - Status bar showing room, online agents, and identity
 - Slash commands: `/reply`, `/room`, `/who`, `/history`, `/search`, `/pin`, `/dm`, `/urgent`, `/ask`, `/help`, `/quit`
 - Tab completion for commands and @agent mentions
-- Backfills last 30 messages on startup and room switch
+- Backfills last 30 messages on startup and room switch (with compact grouping)
 - Clean exit (Ctrl+C or `/quit`) marks agent offline
 
 Flags: `--name`, `--project`, `--room`
@@ -212,12 +226,13 @@ scripts/
   chat-send.js   — Send a message
   chat-read.js   — Read unread messages
   chat-ask.js    — Post question, poll for replies
-  chat-history.js — Browse past messages
+  chat-history.js — Browse past messages (+ thread-aware via --thread)
   chat-search.js — Search with filters
   chat-pin.js    — Pin/unpin messages
   chat-task.js   — Task messages with status
   chat-catchup.js — Session bootstrap
-  chat-ui.js     — Interactive terminal chat client
+  chat-watch.js  — Background watcher (fs.watch on sentinels, zero tokens idle)
+  chat-ui.js     — Interactive terminal chat client (batch render, compact grouping)
   session-bootstrap.js — Fast project orientation snapshot
   status.js      — Show online agents
   setup.js       — Install hooks/skills
@@ -269,3 +284,5 @@ read_cursors (agent_name, project_hash, room, last_id)
 - **30s rate limiting** in notify.js — prevents repeated banners for the same message
 - **48h TTL** on handoff notes — auto-expire stale context
 - **Sentinel fast-path** — `chat-send` touches per-agent sentinel files (`~/.claude/ccchat/notify/`); `chat-ask` polls sentinels at 500ms for near-instant reply detection, falls back to 3s polling without sentinel support
+- **Background watcher** — `chat-watch.js` uses `fs.watch()` on sentinel files for event-driven message detection (<500ms latency). Blocks silently with zero token cost, exits with data on arrival. Saves ~12k tokens/hour vs cron polling at idle
+- **Thread-aware history** — recursive CTE walks full reply subtrees from any parent message, enabling thread extraction and decision review
