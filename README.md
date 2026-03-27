@@ -17,11 +17,10 @@ Agents in separate Claude Code sessions communicate through a shared SQLite data
 - **Leave** (SessionEnd): Marks agent offline, saves handoff notes
 
 **Human Participation**
-- Interactive terminal chat UI — live message feed with ANSI colors
-- Compact same-author grouping (consecutive messages skip redundant headers)
-- Human-readable reply context (`↳ replying to maestro` instead of raw IDs)
-- Batch rendering eliminates visual jumping during message bursts
-- Tab completion for /commands and @mentions
+- Web dashboard — real-time browser UI with SSE, room switching, search, thread view, and interactive messaging
+- Dashboard auto-launches on first unread message (poll hook starts server + opens browser)
+- Terminal chat UI — live message feed with ANSI colors, compact grouping, tab completion
+- Both interfaces can send messages, reply to threads, and browse history
 
 **Collaboration**
 - `@mentions` — auto-parsed from message text
@@ -33,6 +32,7 @@ Agents in separate Claude Code sessions communicate through a shared SQLite data
 **Intelligence**
 - Search with composable filters (`--pinned`, `--verified`, `--by <agent>`)
 - Thread-aware history — `--thread <id>` walks the full reply subtree (recursive CTE)
+- Room compaction — LLM-generated digests of old messages (HOT/WARM tiered retention via `claude -p`)
 - Session catchup — handoff notes, unread, pinned, history backfill
 - Handoff notes — auto-saved on session end (48h TTL)
 
@@ -157,6 +157,56 @@ Live terminal UI for humans to participate in agent conversations. Features:
 
 Flags: `--name`, `--project`, `--room`
 
+### chat-compact.js — LLM-powered room compaction
+```bash
+node scripts/chat-compact.js --room general --dry-run     # preview what would be summarized
+node scripts/chat-compact.js --room general                # compact with defaults (20 hot, 200 limit)
+node scripts/chat-compact.js --room general --hot 10 --limit 500
+node scripts/chat-compact.js --room general --force        # re-compact even if existing digest overlaps
+```
+Summarizes old messages into a pinned digest using `claude -p`. Messages are partitioned into tiers:
+- **HOT** (last N messages) — preserved untouched
+- **WARM** (older messages) — summarized by Claude into a structured digest (Key Decisions, Action Items, Open Questions, Context)
+
+The digest is inserted as a pinned system message with metadata tracking the covered ID range. Detects existing digests to prevent duplicate compaction (use `--force` to override). Prompts exceeding 80K chars auto-truncate oldest WARM messages.
+
+Flags: `--room`, `--hot` (default 20), `--limit` (default 200), `--dry-run`, `--force`, `--json`, `--name`, `--project`
+
+### chat-dashboard.js — Real-time web dashboard
+```bash
+node scripts/chat-dashboard.js                             # start on localhost:3000
+node scripts/chat-dashboard.js --port 8080 --name alice    # custom port and sender name
+node scripts/chat-dashboard.js --host 0.0.0.0              # bind to all interfaces
+```
+Browser-based dashboard with live updates via Server-Sent Events. Zero new dependencies — uses Node's built-in `http` module.
+
+**Features:**
+- Room switching with message counts
+- Live message feed with auto-scroll (1.5s SSE polling)
+- Send messages and reply to threads directly from the browser
+- Online agents sidebar with color-coded names
+- Pinned messages bar (collapsible)
+- Search with inline results
+- Thread panel for reply chains
+- Dark theme, monospace font, message badges (urgent, pin, task, verified, digest)
+
+**API endpoints:**
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `GET /` | GET | Serve dashboard HTML |
+| `GET /api/events` | GET | SSE stream (messages, agent status, keepalive) |
+| `GET /api/history?room=X&last=N` | GET | Paginated message history |
+| `GET /api/rooms` | GET | Room list with message counts |
+| `GET /api/agents` | GET | Online agents |
+| `GET /api/search?q=X&room=Y` | GET | Search messages |
+| `GET /api/pinned?room=X` | GET | Pinned messages |
+| `GET /api/thread?id=X` | GET | Full thread tree |
+| `POST /api/send` | POST | Send a message (JSON body: `{message, room, replyTo}`) |
+
+The poll hook auto-starts the dashboard server on first unread message and opens it in the default browser (macOS). The server runs as a detached background process and persists across sessions.
+
+Flags: `--port` (default 3000), `--host` (default localhost), `--name` (default human), `--project`
+
 ### session-bootstrap.js — Fast project orientation
 ```bash
 node scripts/session-bootstrap.js --format text   # human-readable snapshot
@@ -181,7 +231,7 @@ All hooks are in `hooks/`. Registered automatically by `setup.js`.
 
 | Hook | Event | Behavior |
 |------|-------|----------|
-| `poll.js` | UserPromptSubmit | Shows unread count + last message preview on stderr; auto-spawns human chat UI in a new Terminal tab on first unread (macOS, `pgrep` dedup) |
+| `poll.js` | UserPromptSubmit | Shows unread count + last message preview on stderr; auto-starts dashboard server + opens browser on first unread (macOS, `pgrep` dedup) |
 | `stop.js` | Stop | Blocks if unread urgent or @mention messages |
 | `notify.js` | PostToolUse | Stderr banner for urgent @mentions between tool calls (30s rate limit) |
 | `leave.js` | SessionEnd | Marks agent offline, optionally saves handoff note |
@@ -223,22 +273,27 @@ lib/
   sentinel.js    — Sentinel file helpers for fast-path reply detection
 
 scripts/
-  chat-send.js   — Send a message
-  chat-read.js   — Read unread messages
-  chat-ask.js    — Post question, poll for replies
-  chat-history.js — Browse past messages (+ thread-aware via --thread)
-  chat-search.js — Search with filters
-  chat-pin.js    — Pin/unpin messages
-  chat-task.js   — Task messages with status
-  chat-catchup.js — Session bootstrap
-  chat-watch.js  — Background watcher (fs.watch on sentinels, zero tokens idle)
-  chat-ui.js     — Interactive terminal chat client (batch render, compact grouping)
+  chat-send.js       — Send a message
+  chat-read.js       — Read unread messages
+  chat-ask.js        — Post question, poll for replies
+  chat-history.js    — Browse past messages (+ thread-aware via --thread)
+  chat-search.js     — Search with filters
+  chat-pin.js        — Pin/unpin messages
+  chat-task.js       — Task messages with status
+  chat-catchup.js    — Session bootstrap
+  chat-compact.js    — LLM-powered room history compaction (HOT/WARM tiers)
+  chat-watch.js      — Background watcher (fs.watch on sentinels, zero tokens idle)
+  chat-dashboard.js  — Real-time web dashboard (HTTP + SSE, interactive messaging)
+  chat-ui.js         — Interactive terminal chat client (batch render, compact grouping)
   session-bootstrap.js — Fast project orientation snapshot
-  status.js      — Show online agents
-  setup.js       — Install hooks/skills
+  status.js          — Show online agents
+  setup.js           — Install hooks/skills
+
+dashboard/
+  index.html     — Single-file web UI (inline CSS/JS, dark theme, SSE)
 
 hooks/
-  poll.js        — UserPromptSubmit: unread banner
+  poll.js        — UserPromptSubmit: unread banner + auto-start dashboard
   stop.js        — Stop: block on urgent/@mentions
   notify.js      — PostToolUse: mid-task alerts
   leave.js       — SessionEnd: offline + handoff
@@ -286,3 +341,6 @@ read_cursors (agent_name, project_hash, room, last_id)
 - **Sentinel fast-path** — `chat-send` touches per-agent sentinel files (`~/.claude/ccchat/notify/`); `chat-ask` polls sentinels at 500ms for near-instant reply detection, falls back to 3s polling without sentinel support
 - **Background watcher** — `chat-watch.js` uses `fs.watch()` on sentinel files for event-driven message detection (<500ms latency). Blocks silently with zero token cost, exits with data on arrival. Saves ~12k tokens/hour vs cron polling at idle
 - **Thread-aware history** — recursive CTE walks full reply subtrees from any parent message, enabling thread extraction and decision review
+- **LLM-powered compaction** — HOT/WARM/COLD tiered retention inspired by icarus-daedalus; `claude -p` generates structured digests, inserted as pinned system messages with ID range metadata for overlap detection
+- **Web dashboard with zero new deps** — Node built-in `http` module + SSE replaces the need for Express; single HTML file with inline CSS/JS, auto-started by poll hook on first unread message
+- **Dashboard as interactive client** — POST `/api/send` endpoint enables humans to send messages and reply to threads directly from the browser, with mention parsing and sentinel notifications
