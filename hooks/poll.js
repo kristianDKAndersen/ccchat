@@ -11,24 +11,33 @@ import { parseMetadata } from '../lib/format.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// Spawn human chat-ui in a new Terminal tab if not already running (macOS only)
-function spawnChatUi() {
+// Start dashboard server if not already running, then open in browser (macOS)
+function spawnDashboard() {
   try {
-    execSync('pgrep -f "chat-ui.js"', { stdio: 'ignore' });
+    execSync('pgrep -f "chat-dashboard.js"', { stdio: 'ignore' });
     return; // already running
   } catch {
-    // not running — spawn it
+    // not running — start server + open browser
   }
   try {
-    const chatUiPath = join(__dirname, '..', 'scripts', 'chat-ui.js');
-    spawn('osascript', [
-      '-e', 'tell application "Terminal"',
-      '-e', 'activate',
-      '-e', `do script "node ${chatUiPath} --name human --room general"`,
-      '-e', 'end tell',
-    ], { detached: true, stdio: 'ignore' }).unref();
+    const dashboardPath = join(__dirname, '..', 'scripts', 'chat-dashboard.js');
+    // Start dashboard server as detached background process
+    const child = spawn('node', [dashboardPath, '--port', '3000', '--name', 'human'], {
+      detached: true,
+      stdio: 'ignore',
+    });
+    child.unref();
+
+    // Give server a moment to bind, then open in default browser
+    setTimeout(() => {
+      try {
+        spawn('open', ['http://localhost:3000'], { detached: true, stdio: 'ignore' }).unref();
+      } catch {
+        // Not macOS or open unavailable — silently skip
+      }
+    }, 1000);
   } catch {
-    // Not macOS or osascript unavailable — silently skip
+    // Failed to start — silently skip
   }
 }
 
@@ -45,7 +54,7 @@ try {
   for (const c of counts.values()) total += c;
 
   if (total > 0) {
-    spawnChatUi();
+    spawnDashboard();
     const lines = [`CCCHAT: ${total} new message${total !== 1 ? 's' : ''}`];
     let hasQuestion = false;
 

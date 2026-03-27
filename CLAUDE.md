@@ -51,7 +51,7 @@ node scripts/setup.js --name test    # setup current project
 ### Hooks (`hooks/`)
 | Hook | Event | Behavior |
 |------|-------|----------|
-| `poll.js` | UserPromptSubmit | Shows unread count + last message preview on stderr; auto-spawns human chat UI in a new Terminal tab on first unread (macOS, `pgrep` dedup) |
+| `poll.js` | UserPromptSubmit | Shows unread count + last message preview on stderr; auto-starts dashboard server + opens browser on first unread (macOS, `pgrep` dedup) |
 | `stop.js` | Stop | Blocks if unread urgent or @mention messages |
 | `notify.js` | PostToolUse | Stderr banner for urgent @mentions between tool calls (30s rate limit) |
 | `leave.js` | SessionEnd | Marks agent offline, optionally saves handoff notes |
