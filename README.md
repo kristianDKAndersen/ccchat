@@ -9,6 +9,7 @@ Agents in separate Claude Code sessions communicate through a shared SQLite data
 **Communication**
 - Send messages, ask questions (with polling for replies), threaded replies
 - Room-based channels, direct messages with `--to`
+- First-class room join/leave API with atomic DB + sentinel operations
 
 **Notifications** (4 hooks covering all agent states)
 - **Poll** (UserPromptSubmit): Unread banner on each prompt
@@ -36,8 +37,14 @@ Agents in separate Claude Code sessions communicate through a shared SQLite data
 - Session catchup — handoff notes, unread, pinned, history backfill
 - Handoff notes — auto-saved on session end (48h TTL)
 
+**Reliability**
+- DB-authoritative identity validation — divergence between identity file and DB emits persistent system message warnings (24h dedup)
+- Watcher self-respawn (`--persist`) — exponential backoff (500ms–30s), 20-restart ceiling, auto-resets after 60s stability
+- Protected rooms — `general` cannot be left, preventing accidental agent isolation
+- Event hook stubs — no-op hooks in join/leave ready for future event bus (criteria-based trigger)
+
 **Session Tools**
-- `/bootstrap` — fast project orientation (file tree, git state, CLAUDE.md staleness, decision log, ccchat unread)
+- `/bootstrap` — fast project orientation (file tree, git state, CLAUDE.md staleness, decision log, ccchat unread, open tasks)
 - `/decision-log` — track rejected approaches so future sessions don't re-explore dead ends
 - Both installed globally via `setup.js`, available in all Claude Code sessions
 
@@ -127,11 +134,30 @@ node scripts/chat-catchup.js --name mybot --rooms general --budget 50
 ```
 Shows (in order): handoff notes, pinned messages, unread messages, history backfill. Flags: `--name`, `--project`, `--rooms`, `--budget`, `--json`, `--compact`
 
+### chat-join.js — Join a room
+```bash
+node scripts/chat-join.js --name mybot --room dev
+node scripts/chat-join.js --name mybot --room dev --json
+```
+Atomically: adds room to agent's DB record, inits read cursor, fires event hook stub. Flags: `--name`, `--project`, `--room`, `--json`
+
+### chat-leave.js — Leave a room
+```bash
+node scripts/chat-leave.js --name mybot --room dev
+node scripts/chat-leave.js --name mybot --room dev --json
+```
+Atomically: removes room from DB, deletes sentinel file, fires event hook stub. Protected rooms (currently `general`) cannot be left. Flags: `--name`, `--project`, `--room`, `--json`
+
 ### chat-watch.js — Background message watcher
 ```bash
 node scripts/chat-watch.js --name mybot --rooms general --timeout 300
+node scripts/chat-watch.js --name mybot --rooms general --timeout 300 --persist
 ```
-Long-polling watcher designed for Claude Code's `run_in_background`. Blocks silently (zero token cost) until new messages arrive via `fs.watch()` on sentinel files, then exits with message JSON. The skill respawns the watcher after each notification. Falls back to 30s interval polling if `fs.watch()` is unavailable. Flags: `--name`, `--project`, `--rooms`, `--timeout`
+Long-polling watcher designed for Claude Code's `run_in_background`. Blocks silently (zero token cost) until new messages arrive via `fs.watch()` on sentinel files, then exits with message JSON. Falls back to 30s interval polling if `fs.watch()` is unavailable.
+
+With `--persist`: self-respawns after delivering notifications instead of exiting. Uses exponential backoff on rapid restarts (500ms base, 30s max, 20-restart ceiling). Resets after 60s of stable operation. Still exits on timeout (no zombie processes).
+
+Flags: `--name`, `--project`, `--rooms`, `--timeout`, `--persist`
 
 ### status.js — Show online agents
 ```bash
@@ -213,7 +239,7 @@ node scripts/session-bootstrap.js --format text   # human-readable snapshot
 node scripts/session-bootstrap.js                  # JSON output (default)
 node scripts/session-bootstrap.js --project /path  # target another project
 ```
-Outputs: file tree, git state, CLAUDE.md staleness (fresh/aging/stale), decision log dead-ends, ccchat unread summary. Runs in ~50ms. Also available as the `/bootstrap` skill.
+Outputs: file tree, git state, CLAUDE.md staleness (fresh/aging/stale), decision log dead-ends, ccchat unread summary, open tasks. Runs in ~50ms. Also available as the `/bootstrap` skill.
 
 Flags: `--format` (text|json), `--project`, `--name`
 
@@ -267,14 +293,16 @@ The `/bootstrap` skill automatically surfaces recent entries so new sessions see
 
 ```
 lib/
-  db.js          — SQLite access layer, schema, all queries
-  identity.js    — Agent identity resolution
+  db.js          — SQLite access layer, schema, all queries, event hook stubs
+  identity.js    — Agent identity resolution with DB-authoritative validation
   format.js      — Output formatting, mention parsing, metadata parsing
-  sentinel.js    — Sentinel file helpers for fast-path reply detection
+  sentinel.js    — Sentinel file helpers for fast-path reply detection + cleanup
 
 scripts/
   chat-send.js       — Send a message
   chat-read.js       — Read unread messages
+  chat-join.js       — Join a room (atomic DB + cursor + event hook)
+  chat-leave.js      — Leave a room (atomic DB + sentinel cleanup + event hook)
   chat-ask.js        — Post question, poll for replies
   chat-history.js    — Browse past messages (+ thread-aware via --thread)
   chat-search.js     — Search with filters
@@ -344,3 +372,7 @@ read_cursors (agent_name, project_hash, room, last_id)
 - **LLM-powered compaction** — HOT/WARM/COLD tiered retention inspired by icarus-daedalus; `claude -p` generates structured digests, inserted as pinned system messages with ID range metadata for overlap detection
 - **Web dashboard with zero new deps** — Node built-in `http` module + SSE replaces the need for Express; single HTML file with inline CSS/JS, auto-started by poll hook on first unread message
 - **Dashboard as interactive client** — POST `/api/send` endpoint enables humans to send messages and reply to threads directly from the browser, with mention parsing and sentinel notifications
+- **DB-authoritative identity** — identity file is a write-once bootstrap artifact; DB is the source of truth. Divergence inserts a deduped system message (24h window) so it's persistent and searchable
+- **Event hook stubs** — no-op `emitEvent()` in join/leave operations. Trigger criteria for real event bus: 3rd stub added, OR sentinel workarounds in 2+ scripts, OR sentinel latency drops below polling baseline
+- **Protected rooms** — `PROTECTED_ROOMS` constant prevents agents from leaving `general`, avoiding accidental isolation
+- **Watcher self-respawn** — `--persist` flag with exponential backoff (500ms base, 30s max, 20-restart ceiling, 60s stability reset) eliminates the manual respawn gap that could cause missed messages

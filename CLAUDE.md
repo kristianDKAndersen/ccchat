@@ -26,10 +26,12 @@ node scripts/setup.js --name test    # setup current project
 ### Library (`lib/`)
 - `db.js` — SQLite access layer, schema, all queries
 - `format.js` — Message formatting, parsing, mention extraction, display utilities
-- `identity.js` — Agent identity resolution from flags or `.claude/ccchat-identity.json`
+- `identity.js` — Agent identity resolution from flags or `.claude/ccchat-identity.json`, with DB-authoritative validation
 
 ### Scripts (`scripts/`)
 - `chat-send.js` — Send a message (`--reply-to <id>` for threading, `--to` for DMs)
+- `chat-join.js` — Join a room (`--room <room>`, atomically updates DB + inits cursor + event hook stub)
+- `chat-leave.js` — Leave a room (`--room <room>`, atomically updates DB + cleans sentinel + event hook stub; cannot leave `general`)
 - `chat-read.js` — Read unread messages (advances read cursor)
 - `chat-ask.js` — Post question, poll for replies (filters by `parent_id`)
 - `chat-history.js` — Paginated history viewer (read-only, no cursor change)
@@ -38,8 +40,8 @@ node scripts/setup.js --name test    # setup current project
 - `chat-task.js` — Create/update task messages (assign, status, evidence tracking)
 - `chat-catchup.js` — Bootstrap new agents: unread + handoff notes + recent history
 - `chat-ui.js` — Interactive terminal chat client for humans (live polling, ANSI colors, /commands)
-- `session-bootstrap.js` — Gap detector: CLAUDE.md staleness, session diff (changes since last bootstrap via stored SHA), decision log dead-ends, ccchat unread. Skips file tree and git state (redundant with Claude Code context)
-- `chat-watch.js` — Long-polling watcher: blocks until new messages arrive via `fs.watch()` on sentinel files, then exits with message JSON. Designed for `run_in_background` — zero token cost while idle, <500ms latency. Does NOT advance read cursor (caller runs `chat-read.js` to consume)
+- `session-bootstrap.js` — Gap detector: CLAUDE.md staleness, session diff (changes since last bootstrap via stored SHA), decision log dead-ends, ccchat unread, open tasks. Skips file tree and git state (redundant with Claude Code context)
+- `chat-watch.js` — Long-polling watcher: blocks until new messages arrive via `fs.watch()` on sentinel files, then exits with message JSON. `--persist` flag enables self-respawn with exponential backoff (max 20 restarts, resets after 60s stability). Does NOT advance read cursor (caller runs `chat-read.js` to consume)
 - `chat-compact.js` — LLM-powered room history compaction. Partitions messages into HOT (recent, preserved) and WARM (older, summarized) tiers, invokes `claude -p` to generate a digest, inserts as pinned system message. Flags: `--room`, `--hot 20`, `--limit 200`, `--dry-run`, `--force`, `--json`
 - `chat-dashboard.js` — Real-time web dashboard (Node built-in `http`, no new deps). REST API + SSE for live message streaming. Flags: `--port 3000`, `--host localhost`
 - `status.js` — Show online agents and rooms (`--raw` for JSON, `--prune` for cleanup)
@@ -73,7 +75,11 @@ node scripts/setup.js --name test    # setup current project
 - **Session bootstrap** — fast orientation snapshot for new sessions (file tree, git, staleness, decision log)
 - **Decision log integration** — surfaces .decisions/log.yaml dead-ends in bootstrap output
 - **Sentinel fast-path** — `chat-send` touches per-agent sentinel files after insert; `chat-watch` uses `fs.watch()` on sentinels for event-driven detection (<500ms); `chat-ask` polls sentinels at 500ms for reply detection. Falls back to interval polling without sentinel support
-- **Background watcher** — `chat-watch.js` replaces cron polling. Blocks silently (zero tokens) until messages arrive, then exits with data. Respawned by the skill after each notification. Saves ~12k tokens/hour vs cron at idle
+- **Room join/leave** — first-class `chat-join.js` / `chat-leave.js` scripts with atomic DB + sentinel + event hook stub operations. Cannot leave `general`
+- **Identity validation** — DB-authoritative identity resolution. Divergence between `.claude/ccchat-identity.json` and DB emits stderr warning; DB wins
+- **Open task surfacing** — session bootstrap now shows open tasks across agent's rooms
+- **Background watcher** — `chat-watch.js` replaces cron polling. Blocks silently (zero tokens) until messages arrive, then exits with data. `--persist` flag enables self-respawn with exponential backoff (no manual respawn needed). Saves ~12k tokens/hour vs cron at idle
+- **Event hook stubs** — no-op hooks in join/leave operations, ready for future event bus. Trigger criteria: 3rd stub added, OR 2+ sentinel workarounds, OR sentinel latency < polling baseline
 
 ## Database Schema
 
@@ -101,6 +107,10 @@ node scripts/chat-history.js --room general --last 10
 # Search messages
 node scripts/chat-search.js --room general --query "deployment" --pinned
 
+# Join/leave rooms
+node scripts/chat-join.js --name test-agent --project /tmp/test --room dev
+node scripts/chat-leave.js --name test-agent --project /tmp/test --room dev
+
 # Check status
 node scripts/status.js --raw
 ```
@@ -119,3 +129,7 @@ node scripts/status.js --raw
 - 30s rate limiting in notify.js — prevents repeated banners for the same message
 - 48h TTL on handoff notes — auto-expire stale context
 - Sentinel files (`~/.claude/ccchat/notify/`) — touched by senders, checked by chat-ask for fast-path reply detection without a daemon. Replies touch parent author only; broadcasts touch all online room agents. Best-effort — falls back to polling if sentinels are absent
+- DB-authoritative identity — identity file is a write-once bootstrap artifact; DB is the source of truth. Divergence warns on stderr, DB wins
+- Event hook stubs — no-op `emitEvent()` calls in join/leave, designed to become a real event bus when criteria are met (3rd stub, 2+ workarounds, or latency degradation)
+- `general` room is permanent — agents cannot leave it, preventing accidental isolation
+- Watcher self-respawn — `--persist` mode with exponential backoff (500ms base, 30s max, 20 restart ceiling) resets after 60s of stable operation
