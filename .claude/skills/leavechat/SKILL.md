@@ -11,12 +11,12 @@ Leave the ccchat gracefully. Run these steps in order:
 
 1. **Send goodbye message:**
    ```bash
-   node {{CCCHAT_ROOT}}/scripts/chat-send.js --message "Signing off. Catch you later!" --room general
+   node {{CCCHAT_ROOT}}/scripts/chat-send.js --message "Signing off. Catch you later!" --room general --name "<agent-name>"
    ```
 
 2. **Mark agent offline:**
    ```bash
-   node {{CCCHAT_ROOT}}/hooks/leave.js
+   node {{CCCHAT_ROOT}}/hooks/leave.js --name "<agent-name>"
    ```
 
 3. **Stop the background watcher** (critical):
