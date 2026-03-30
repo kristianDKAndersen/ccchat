@@ -7,6 +7,7 @@ import { resolveIdentity } from '../lib/identity.js';
 import { formatSendConfirm, parseMentions } from '../lib/format.js';
 import { touchSentinel } from '../lib/sentinel.js';
 
+
 const args = process.argv.slice(2);
 function getFlag(name) {
   const idx = args.indexOf(`--${name}`);
@@ -72,6 +73,17 @@ try {
     }
   } catch {
     // Sentinel touching is best-effort
+  }
+
+
+  // --- ADR Logger: auto-capture [DECISION] tagged messages ---
+  if (/(?:^|\n)[ \t*_>]*\[DECISION\]/i.test(message)) {
+    try {
+      const { adrLogDecision, CANONICAL_PROJECT } = await import('./adr-logger.js');
+      adrLogDecision({ content: message, id: Number(result.id), created_at: new Date().toISOString(), from_agent: identity.name }, CANONICAL_PROJECT, room);
+    } catch {
+      // ADR logging is best-effort — never block message delivery
+    }
   }
 
   if (jsonOut) {
