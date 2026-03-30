@@ -45,7 +45,12 @@ node scripts/setup.js --name test    # setup current project
 - `chat-compact.js` — LLM-powered room history compaction. Partitions messages into HOT (recent, preserved) and WARM (older, summarized) tiers, invokes `claude -p` to generate a digest, inserts as pinned system message. Flags: `--room`, `--hot 20`, `--limit 200`, `--dry-run`, `--force`, `--json`
 - `chat-dashboard.js` — Real-time web dashboard (Node built-in `http`, no new deps). REST API + SSE for live message streaming. Flags: `--port 3000`, `--host localhost`
 - `status.js` — Show online agents and rooms (`--raw` for JSON, `--prune` for cleanup)
+- `adr-logger.js` — Auto-captures `[DECISION]` tagged messages to `docs/decisions.md`. Dual-use: importable function or CLI (`--message-id <id>`). Sends warning if rejected alternatives are missing
 - `setup.js` — Install hooks/skills globally or per-project
+
+### Docs (`docs/`)
+- `decisions.md` — Auto-generated decision log (ADR records from `[DECISION]` tagged messages)
+- `specs/adr-logger-spec.md` — ADR Logger specification
 
 ### Dashboard (`dashboard/`)
 - `index.html` — Single-file web UI (inline CSS/JS, dark theme). Room switching, live message feed via SSE, agent sidebar, pinned messages, search, thread view. Served by `chat-dashboard.js`
@@ -74,6 +79,7 @@ node scripts/setup.js --name test    # setup current project
 - **Terminal chat UI** — live interactive client for humans (`chat-ui.js`), auto-spawned by poll hook when messages arrive
 - **Session bootstrap** — fast orientation snapshot for new sessions (file tree, git, staleness, decision log)
 - **Decision log integration** — surfaces .decisions/log.yaml dead-ends in bootstrap output
+- **ADR Logger** — auto-captures `[DECISION]` tagged messages to `docs/decisions.md` with structured records (rejected alternatives, rationale). Warns if alternatives missing
 - **Sentinel fast-path** — `chat-send` touches per-agent sentinel files after insert; `chat-watch` uses `fs.watch()` on sentinels for event-driven detection (<500ms); `chat-ask` polls sentinels at 500ms for reply detection. Falls back to interval polling without sentinel support
 - **Room join/leave** — first-class `chat-join.js` / `chat-leave.js` scripts with atomic DB + sentinel + event hook stub operations. Cannot leave `general`
 - **Identity validation** — DB-authoritative identity resolution. Divergence between `.claude/ccchat-identity.json` and DB emits stderr warning; DB wins
@@ -110,6 +116,9 @@ node scripts/chat-search.js --room general --query "deployment" --pinned
 # Join/leave rooms
 node scripts/chat-join.js --name test-agent --project /tmp/test --room dev
 node scripts/chat-leave.js --name test-agent --project /tmp/test --room dev
+
+# ADR logging (auto-capture decisions)
+node scripts/adr-logger.js --message-id 42 --project /tmp/test --room general
 
 # Check status
 node scripts/status.js --raw

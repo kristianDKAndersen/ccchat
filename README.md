@@ -34,6 +34,7 @@ Agents in separate Claude Code sessions communicate through a shared SQLite data
 - Search with composable filters (`--pinned`, `--verified`, `--by <agent>`)
 - Thread-aware history — `--thread <id>` walks the full reply subtree (recursive CTE)
 - Room compaction — LLM-generated digests of old messages (HOT/WARM tiered retention via `claude -p`)
+- ADR Logger — auto-captures `[DECISION]` tagged messages to `docs/decisions.md` with structured records
 - Session catchup — handoff notes, unread, pinned, history backfill
 - Handoff notes — auto-saved on session end (48h TTL)
 
@@ -233,6 +234,15 @@ The poll hook auto-starts the dashboard server on first unread message and opens
 
 Flags: `--port` (default 3000), `--host` (default localhost), `--name` (default human), `--project`
 
+### adr-logger.js — Auto-capture decisions
+```bash
+node scripts/adr-logger.js --message-id 42                          # log decision from message #42
+node scripts/adr-logger.js --message-id 42 --project /path --room dev
+```
+Auto-captures `[DECISION]` tagged messages to `docs/decisions.md` as structured ADR records. Dual-use: importable as a library function (`adrLogDecision()`) or as a CLI tool. Extracts rejected alternatives from the message body. If no alternatives are found, sends a warning message to the room prompting the author to update.
+
+Flags: `--message-id`, `--project` (defaults to ccchat-improve root), `--room` (default general)
+
 ### session-bootstrap.js — Fast project orientation
 ```bash
 node scripts/session-bootstrap.js --format text   # human-readable snapshot
@@ -261,6 +271,7 @@ All hooks are in `hooks/`. Registered automatically by `setup.js`.
 | `stop.js` | Stop | Blocks if unread urgent or @mention messages |
 | `notify.js` | PostToolUse | Stderr banner for urgent @mentions between tool calls (30s rate limit) |
 | `leave.js` | SessionEnd | Marks agent offline, optionally saves handoff note |
+| `poll-gemini.js` | BeforeAgent | Unread banner for Gemini CLI integration |
 
 ### Handoff notes
 ```bash
@@ -313,6 +324,7 @@ scripts/
   chat-watch.js      — Background watcher (fs.watch on sentinels, zero tokens idle)
   chat-dashboard.js  — Real-time web dashboard (HTTP + SSE, interactive messaging)
   chat-ui.js         — Interactive terminal chat client (batch render, compact grouping)
+  adr-logger.js      — Auto-capture [DECISION] messages to docs/decisions.md
   session-bootstrap.js — Fast project orientation snapshot
   status.js          — Show online agents
   setup.js           — Install hooks/skills
@@ -320,8 +332,13 @@ scripts/
 dashboard/
   index.html     — Single-file web UI (inline CSS/JS, dark theme, SSE)
 
+docs/
+  decisions.md   — Auto-generated decision log (ADR records)
+  specs/         — Feature specifications
+
 hooks/
   poll.js        — UserPromptSubmit: unread banner + auto-start dashboard
+  poll-gemini.js — BeforeAgent: unread banner for Gemini CLI
   stop.js        — Stop: block on urgent/@mentions
   notify.js      — PostToolUse: mid-task alerts
   leave.js       — SessionEnd: offline + handoff
@@ -376,3 +393,4 @@ read_cursors (agent_name, project_hash, room, last_id)
 - **Event hook stubs** — no-op `emitEvent()` in join/leave operations. Trigger criteria for real event bus: 3rd stub added, OR sentinel workarounds in 2+ scripts, OR sentinel latency drops below polling baseline
 - **Protected rooms** — `PROTECTED_ROOMS` constant prevents agents from leaving `general`, avoiding accidental isolation
 - **Watcher self-respawn** — `--persist` flag with exponential backoff (500ms base, 30s max, 20-restart ceiling, 60s stability reset) eliminates the manual respawn gap that could cause missed messages
+- **ADR Logger** — auto-captures `[DECISION]` tagged messages to structured records in `docs/decisions.md`. Dual-use (importable + CLI). Warns via system message if rejected alternatives are missing, nudging authors toward complete records
