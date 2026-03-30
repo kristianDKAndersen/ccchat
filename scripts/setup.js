@@ -24,17 +24,19 @@ function getFlag(name) {
   return (next && !next.startsWith('--')) ? next : true;
 }
 
-const isGlobal = args.includes('--global');
+const isGlobal   = args.includes('--global');
 const isUninstall = args.includes('--uninstall');
-const agentName = getFlag('name') || basename(process.cwd());
-const room = getFlag('room') || 'general';
+const agentName  = getFlag('name') || basename(process.cwd());
+const room       = getFlag('room') || 'general';
 const projectDir = isGlobal ? null : process.cwd();
+
+const HOOK_FILES = ['poll.js', 'stop.js', 'leave.js', 'notify.js', 'compact-nudge.js', 'post-compact.js'];
 
 function ensureDir(dir) {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 }
 
-function mergeSettings(settingsPath, pollCmd, stopCmd, leaveCmd, notifyCmd) {
+function mergeSettings(settingsPath, cmds) {
   let settings = {};
   if (existsSync(settingsPath)) {
     try { settings = JSON.parse(readFileSync(settingsPath, 'utf8')); } catch { /* fresh */ }
@@ -42,33 +44,46 @@ function mergeSettings(settingsPath, pollCmd, stopCmd, leaveCmd, notifyCmd) {
 
   if (!settings.hooks) settings.hooks = {};
 
-  // Helper: check if a hook command is already registered (path-independent)
   function hasHook(arr, hookFile) {
     return arr.some(e => e.hooks?.some(h => h.command?.includes(hookFile)));
   }
 
-  // UserPromptSubmit
+  // UserPromptSubmit — poll + compact-nudge
   if (!settings.hooks.UserPromptSubmit) settings.hooks.UserPromptSubmit = [];
   if (!hasHook(settings.hooks.UserPromptSubmit, 'poll.js')) {
-    settings.hooks.UserPromptSubmit.push({ hooks: [{ type: 'command', command: pollCmd }] });
+    settings.hooks.UserPromptSubmit.push({ hooks: [{ type: 'command', command: cmds.poll }] });
+  }
+  if (!hasHook(settings.hooks.UserPromptSubmit, 'compact-nudge.js')) {
+    settings.hooks.UserPromptSubmit.push({ hooks: [{ type: 'command', command: cmds.nudge }] });
   }
 
   // Stop
   if (!settings.hooks.Stop) settings.hooks.Stop = [];
   if (!hasHook(settings.hooks.Stop, 'stop.js')) {
-    settings.hooks.Stop.push({ hooks: [{ type: 'command', command: stopCmd }] });
+    settings.hooks.Stop.push({ hooks: [{ type: 'command', command: cmds.stop }] });
   }
 
   // SessionEnd
   if (!settings.hooks.SessionEnd) settings.hooks.SessionEnd = [];
   if (!hasHook(settings.hooks.SessionEnd, 'leave.js')) {
-    settings.hooks.SessionEnd.push({ hooks: [{ type: 'command', command: leaveCmd }] });
+    settings.hooks.SessionEnd.push({ hooks: [{ type: 'command', command: cmds.leave }] });
   }
 
-  // PostToolUse
+  // PostToolUse — notify
   if (!settings.hooks.PostToolUse) settings.hooks.PostToolUse = [];
   if (!hasHook(settings.hooks.PostToolUse, 'notify.js')) {
-    settings.hooks.PostToolUse.push({ hooks: [{ type: 'command', command: notifyCmd }] });
+    settings.hooks.PostToolUse.push({ hooks: [{ type: 'command', command: cmds.notify }] });
+  }
+
+  // PostCompact
+  if (!settings.hooks.PostCompact) settings.hooks.PostCompact = [];
+  if (!hasHook(settings.hooks.PostCompact, 'post-compact.js')) {
+    settings.hooks.PostCompact.push({ hooks: [{ type: 'command', command: cmds.postCompact }] });
+  }
+
+  // StatusLine — only add if not already set
+  if (!settings.statusLine) {
+    settings.statusLine = { type: 'command', command: cmds.statusline };
   }
 
   writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
@@ -78,16 +93,19 @@ function removeFromSettings(settingsPath) {
   if (!existsSync(settingsPath)) return;
   try {
     const settings = JSON.parse(readFileSync(settingsPath, 'utf8'));
-    for (const event of ['UserPromptSubmit', 'Stop', 'SessionEnd', 'PostToolUse']) {
+    for (const event of ['UserPromptSubmit', 'Stop', 'SessionEnd', 'PostToolUse', 'PostCompact']) {
       if (settings.hooks?.[event]) {
-        const hookFiles = ['poll.js', 'stop.js', 'leave.js', 'notify.js'];
         settings.hooks[event] = settings.hooks[event].filter(e =>
-          !e.hooks?.some(h => hookFiles.some(f => h.command?.includes(f)))
+          !e.hooks?.some(h => HOOK_FILES.some(f => h.command?.includes(f)))
         );
         if (settings.hooks[event].length === 0) delete settings.hooks[event];
       }
     }
     if (settings.hooks && Object.keys(settings.hooks).length === 0) delete settings.hooks;
+    // Remove statusLine only if it points to our statusline.js
+    if (settings.statusLine?.command?.includes('statusline.js')) {
+      delete settings.statusLine;
+    }
     writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
   } catch { /* ok */ }
 }
@@ -98,14 +116,23 @@ function copyFileWithReplacements(src, dest) {
   writeFileSync(dest, content);
 }
 
+function buildCmds(root) {
+  return {
+    poll:        `node ${join(root, 'hooks', 'poll.js')}`,
+    stop:        `node ${join(root, 'hooks', 'stop.js')}`,
+    leave:       `node ${join(root, 'hooks', 'leave.js')}`,
+    notify:      `node ${join(root, 'hooks', 'notify.js')}`,
+    nudge:       `node ${join(root, 'hooks', 'compact-nudge.js')}`,
+    postCompact: `node ${join(root, 'hooks', 'post-compact.js')}`,
+    statusline:  `node ${join(root, 'scripts', 'statusline.js')}`,
+  };
+}
+
 // ── Global install ──────────────────────────────────────────
 
 if (isGlobal) {
   const globalClaudeDir = join(homedir(), '.claude');
-  const pollCmd = `node ${join(CCCHAT_ROOT, 'hooks', 'poll.js')}`;
-  const stopCmd = `node ${join(CCCHAT_ROOT, 'hooks', 'stop.js')}`;
-  const leaveCmd = `node ${join(CCCHAT_ROOT, 'hooks', 'leave.js')}`;
-  const notifyCmd = `node ${join(CCCHAT_ROOT, 'hooks', 'notify.js')}`;
+  const cmds = buildCmds(CCCHAT_ROOT);
 
   if (isUninstall) {
     console.log('Removing ccchat v2 globally...\n');
@@ -126,7 +153,7 @@ if (isGlobal) {
     join(CCCHAT_ROOT, '.claude', 'agents', 'ccchat.md'),
     join(globalClaudeDir, 'agents', 'ccchat.md')
   );
-  console.log('  + Agent:    ~/.claude/agents/ccchat.md');
+  console.log('  + Agent:      ~/.claude/agents/ccchat.md');
 
   // Skills
   ensureDir(join(globalClaudeDir, 'skills', 'ccchat'));
@@ -134,33 +161,32 @@ if (isGlobal) {
     join(CCCHAT_ROOT, '.claude', 'skills', 'ccchat', 'SKILL.md'),
     join(globalClaudeDir, 'skills', 'ccchat', 'SKILL.md')
   );
-  // Copy CLAUDE.md as INTERNALS.md for progressive disclosure
   const claudeMdPath = join(CCCHAT_ROOT, 'CLAUDE.md');
   if (existsSync(claudeMdPath)) {
-    copyFileWithReplacements(
-      claudeMdPath,
-      join(globalClaudeDir, 'skills', 'ccchat', 'INTERNALS.md')
-    );
+    copyFileWithReplacements(claudeMdPath, join(globalClaudeDir, 'skills', 'ccchat', 'INTERNALS.md'));
   }
-  console.log('  + Skill:    ~/.claude/skills/ccchat/ (+ INTERNALS.md)');
+  console.log('  + Skill:      ~/.claude/skills/ccchat/ (+ INTERNALS.md)');
 
   ensureDir(join(globalClaudeDir, 'skills', 'leavechat'));
   copyFileWithReplacements(
     join(CCCHAT_ROOT, '.claude', 'skills', 'leavechat', 'SKILL.md'),
     join(globalClaudeDir, 'skills', 'leavechat', 'SKILL.md')
   );
-  console.log('  + Skill:    ~/.claude/skills/leavechat/');
+  console.log('  + Skill:      ~/.claude/skills/leavechat/');
 
   ensureDir(join(globalClaudeDir, 'skills', 'bootstrap'));
   copyFileWithReplacements(
     join(CCCHAT_ROOT, '.claude', 'skills', 'bootstrap', 'SKILL.md'),
     join(globalClaudeDir, 'skills', 'bootstrap', 'SKILL.md')
   );
-  console.log('  + Skill:    ~/.claude/skills/bootstrap/');
+  console.log('  + Skill:      ~/.claude/skills/bootstrap/');
 
-  // Hooks
-  mergeSettings(join(globalClaudeDir, 'settings.json'), pollCmd, stopCmd, leaveCmd, notifyCmd);
-  console.log('  + Hooks:    ~/.claude/settings.json (UserPromptSubmit + Stop + SessionEnd + PostToolUse)');
+  // Hooks + statusline
+  mergeSettings(join(globalClaudeDir, 'settings.json'), cmds);
+  console.log('  + Hooks:      ~/.claude/settings.json');
+  console.log('                UserPromptSubmit: poll + compact-nudge');
+  console.log('                Stop, SessionEnd, PostToolUse, PostCompact');
+  console.log('  + StatusLine: context bar (🟢🟡🔴 at 60%/80%)');
 
   console.log('\nccchat v2 is now available in ALL Claude Code sessions.');
   console.log('Per-project setup (optional):');
@@ -171,10 +197,7 @@ if (isGlobal) {
 // ── Project-level install ───────────────────────────────────
 
 const claudeDir = join(projectDir, '.claude');
-const pollCmd = `node ${join(CCCHAT_ROOT, 'hooks', 'poll.js')}`;
-const stopCmd = `node ${join(CCCHAT_ROOT, 'hooks', 'stop.js')}`;
-const leaveCmd = `node ${join(CCCHAT_ROOT, 'hooks', 'leave.js')}`;
-const notifyCmd = `node ${join(CCCHAT_ROOT, 'hooks', 'notify.js')}`;
+const cmds = buildCmds(CCCHAT_ROOT);
 
 if (isUninstall) {
   console.log(`Removing ccchat v2 from ${projectDir}...\n`);
@@ -194,7 +217,7 @@ copyFileWithReplacements(
   join(CCCHAT_ROOT, '.claude', 'agents', 'ccchat.md'),
   join(claudeDir, 'agents', 'ccchat.md')
 );
-console.log('  + Agent:    .claude/agents/ccchat.md');
+console.log('  + Agent:      .claude/agents/ccchat.md');
 
 // Skill
 ensureDir(join(claudeDir, 'skills', 'ccchat'));
@@ -202,21 +225,27 @@ copyFileWithReplacements(
   join(CCCHAT_ROOT, '.claude', 'skills', 'ccchat', 'SKILL.md'),
   join(claudeDir, 'skills', 'ccchat', 'SKILL.md')
 );
-console.log('  + Skill:    .claude/skills/ccchat/');
+console.log('  + Skill:      .claude/skills/ccchat/');
 
 // Identity file
 const identityData = { name: agentName, projectPath: projectDir, rooms: [room] };
 writeFileSync(join(claudeDir, 'ccchat-identity.json'), JSON.stringify(identityData, null, 2) + '\n');
-console.log(`  + Identity: .claude/ccchat-identity.json (name: "${agentName}", room: "${room}")`);
+console.log(`  + Identity:   .claude/ccchat-identity.json (name: "${agentName}", room: "${room}")`);
+
+// Hooks + statusline
+mergeSettings(join(claudeDir, 'settings.json'), cmds);
+console.log('  + Hooks:      .claude/settings.json');
+console.log('                UserPromptSubmit: poll + compact-nudge');
+console.log('                Stop, SessionEnd, PostToolUse, PostCompact');
+console.log('  + StatusLine: context bar (🟢🟡🔴 at 60%/80%)');
 
 // Register agent in DB
 try {
   const { upsertAgent, initCursorIfNew, closeDb } = await import('../lib/db.js');
-  const { projectHash } = await import('../lib/db.js');
   upsertAgent({ name: agentName, projectPath: projectDir, rooms: [room] });
   initCursorIfNew(agentName, projectDir, room);
   closeDb();
-  console.log(`  + DB:       "${agentName}" registered in room "${room}"`);
+  console.log(`  + DB:         "${agentName}" registered in room "${room}"`);
 } catch (e) {
   console.log(`  ~ DB registration skipped: ${e.message}`);
 }
