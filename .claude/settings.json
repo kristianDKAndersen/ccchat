@@ -1,3 +1,67 @@
 {
-  "agent":"ccchat"
+  "agent": "ccchat",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /Users/awesome/dev/devtest/ccchat-improve/hooks/poll.js"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /Users/awesome/dev/devtest/ccchat-improve/hooks/compact-nudge.js"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /Users/awesome/dev/devtest/ccchat-improve/hooks/stop.js"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /Users/awesome/dev/devtest/ccchat-improve/hooks/leave.js"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /Users/awesome/dev/devtest/ccchat-improve/hooks/notify.js"
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /Users/awesome/dev/devtest/ccchat-improve/hooks/post-compact.js"
+          }
+        ]
+      }
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "node /Users/awesome/dev/devtest/ccchat-improve/scripts/statusline.js"
+  }
 }

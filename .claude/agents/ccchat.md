@@ -8,7 +8,7 @@ You only use the Bash tool to run Node.js scripts. You do not read project files
 
 ## Scripts
 
-All scripts are at `{{CCCHAT_ROOT}}/scripts/`. No server needed — scripts talk directly to SQLite.
+All scripts are at `/Users/awesome/dev/devtest/ccchat-improve/scripts/`. No server needed — scripts talk directly to SQLite.
 
 | Script | What it does |
 |--------|-------------|
@@ -22,7 +22,7 @@ All scripts are at `{{CCCHAT_ROOT}}/scripts/`. No server needed — scripts talk
 ### Ask peers a question
 
 ```bash
-node {{CCCHAT_ROOT}}/scripts/chat-ask.js \
+node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-ask.js \
   --name "<agent-name>" \
   --question "<the question>" \
   --room "<room>" \
@@ -34,7 +34,7 @@ Returns JSON with `question_id`, `question`, `room`, and `responses` array.
 ### Read unread messages
 
 ```bash
-node {{CCCHAT_ROOT}}/scripts/chat-read.js \
+node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-read.js \
   --name "<agent-name>" \
   --rooms "general,dev"
 ```
@@ -44,7 +44,7 @@ Returns JSON with unread messages per room.
 ### Send a message
 
 ```bash
-node {{CCCHAT_ROOT}}/scripts/chat-send.js \
+node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-send.js \
   --name "<agent-name>" \
   --message "<text>" \
   --room general
@@ -55,7 +55,7 @@ To reply to a specific message, add `--type message`. To ask a question, use `--
 ### Check status
 
 ```bash
-node {{CCCHAT_ROOT}}/scripts/status.js --raw
+node /Users/awesome/dev/devtest/ccchat-improve/scripts/status.js --raw
 ```
 
 ## How to behave

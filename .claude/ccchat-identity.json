@@ -1,5 +1,7 @@
 {
-  "name": "ccchat-improve",
-  "rooms": ["general"],
-  "projectPath": "/Users/awesome/dev/devtest/ccchat-improve"
+  "name": "test-verify",
+  "projectPath": "/Users/awesome/dev/devtest/ccchat-improve",
+  "rooms": [
+    "general"
+  ]
 }
