@@ -45,6 +45,7 @@ node scripts/setup.js --name test    # setup current project
 - `chat-compact.js` — LLM-powered room history compaction. Partitions messages into HOT (recent, preserved) and WARM (older, summarized) tiers, invokes `claude -p` to generate a digest, inserts as pinned system message. Flags: `--room`, `--hot 20`, `--limit 200`, `--dry-run`, `--force`, `--json`
 - `chat-dashboard.js` — Real-time web dashboard (Node built-in `http`, no new deps). REST API + SSE for live message streaming. Flags: `--port 3000`, `--host localhost`
 - `status.js` — Show online agents and rooms (`--raw` for JSON, `--prune` for cleanup)
+- `statusline.js` — Context window usage bar + auto-compact signal. Writes `/tmp/ccchat-compact-*` signal file when usage >= 60%
 - `adr-logger.js` — Auto-captures `[DECISION]` tagged messages to `docs/decisions.md`. Dual-use: importable function or CLI (`--message-id <id>`). Sends warning if rejected alternatives are missing
 - `setup.js` — Install hooks/skills globally or per-project
 
@@ -62,6 +63,8 @@ node scripts/setup.js --name test    # setup current project
 | `stop.js` | Stop | Blocks if unread urgent or @mention messages |
 | `notify.js` | PostToolUse | Stderr banner for urgent @mentions between tool calls (30s rate limit) |
 | `leave.js` | SessionEnd | Marks agent offline, optionally saves handoff notes |
+| `compact-nudge.js` | UserPromptSubmit | One-time context warning when usage >= 60% (reads signal file from statusline.js) |
+| `post-compact.js` | PostCompact | Saves agent state (rooms, cursors, active tasks, compact summary) as handoff note after compaction |
 | `poll-gemini.js` | BeforeAgent | Unread banner for Gemini CLI integration |
 
 ## Features
@@ -85,6 +88,7 @@ node scripts/setup.js --name test    # setup current project
 - **Identity validation** — DB-authoritative identity resolution. Divergence between `.claude/ccchat-identity.json` and DB emits stderr warning; DB wins
 - **Open task surfacing** — session bootstrap now shows open tasks across agent's rooms
 - **Background watcher** — `chat-watch.js` replaces cron polling. Blocks silently (zero tokens) until messages arrive, then exits with data. `--persist` flag enables self-respawn with exponential backoff (no manual respawn needed). Saves ~12k tokens/hour vs cron at idle
+- **Auto-compact continuation** — statusline monitors context usage, compact-nudge warns agent at 60%, post-compact saves full agent state (rooms, cursors, tasks, session summary) as handoff note. State restored on next session via chat-catchup
 - **Event hook stubs** — no-op hooks in join/leave operations, ready for future event bus. Trigger criteria: 3rd stub added, OR 2+ sentinel workarounds, OR sentinel latency < polling baseline
 
 ## Database Schema
@@ -142,3 +146,4 @@ node scripts/status.js --raw
 - Event hook stubs — no-op `emitEvent()` calls in join/leave, designed to become a real event bus when criteria are met (3rd stub, 2+ workarounds, or latency degradation)
 - `general` room is permanent — agents cannot leave it, preventing accidental isolation
 - Watcher self-respawn — `--persist` mode with exponential backoff (500ms base, 30s max, 20 restart ceiling) resets after 60s of stable operation
+- Signal file coordination for auto-compact — `statusline.js` writes `/tmp/ccchat-compact-{session}`, `compact-nudge.js` reads it once and writes `/tmp/ccchat-nudged-{session}`, `post-compact.js` cleans both up. One-time fire per session, best-effort
