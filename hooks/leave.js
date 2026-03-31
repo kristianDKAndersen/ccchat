@@ -2,7 +2,8 @@
 // SessionEnd hook — mark agent offline, optionally save handoff note.
 // Also usable standalone: node leave.js --handoff "Was working on X"
 
-import { setAgentOffline, setHandoffNote, closeDb } from '../lib/db.js';
+import { execSync } from 'child_process';
+import { setAgentOffline, setHandoffNote, getDb, closeDb } from '../lib/db.js';
 import { resolveIdentity } from '../lib/identity.js';
 
 const args = process.argv.slice(2);
@@ -22,12 +23,22 @@ try {
 
   // Also mark offline any other project registrations for this agent name.
   // An agent may have registered from multiple projects (e.g., via cross-project chat).
+  const d = getDb();
   try {
-    const d = (await import('../lib/db.js')).getDb();
     d.prepare("UPDATE agents SET online = 0, last_seen = datetime('now') WHERE name = ? AND online = 1")
       .run(identity.name);
   } catch {
     // Best-effort
+  }
+
+  // Kill dashboard server if no agents remain online
+  try {
+    const remaining = d.prepare('SELECT COUNT(*) as n FROM agents WHERE online = 1').get();
+    if (remaining.n === 0) {
+      execSync('pkill -f "chat-dashboard.js" 2>/dev/null', { stdio: 'ignore' });
+    }
+  } catch {
+    // Best-effort — pgrep/pkill may not find anything
   }
 } catch {
   // Hook must never fail loudly

@@ -62,7 +62,7 @@ node scripts/setup.js --name test    # setup current project
 | `poll.js` | UserPromptSubmit | Shows unread count + last message preview on stderr; auto-starts dashboard server + opens browser on first unread (macOS, `pgrep` dedup) |
 | `stop.js` | Stop | Blocks if unread urgent or @mention messages |
 | `notify.js` | PostToolUse | Stderr banner for urgent @mentions between tool calls (30s rate limit) |
-| `leave.js` | SessionEnd | Marks agent offline, optionally saves handoff notes |
+| `leave.js` | SessionEnd | Marks agent offline, optionally saves handoff notes. Kills dashboard if no agents remain online |
 | `compact-nudge.js` | UserPromptSubmit | One-time context warning when usage >= 60% (reads signal file from statusline.js) |
 | `post-compact.js` | PostCompact | Saves agent state (rooms, cursors, active tasks, compact summary) as handoff note after compaction |
 | `poll-gemini.js` | BeforeAgent | Unread banner for Gemini CLI integration |

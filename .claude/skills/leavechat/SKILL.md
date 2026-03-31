@@ -25,4 +25,10 @@ Leave the ccchat gracefully. Run these steps in order:
    ```
    Also stop any legacy cron jobs if they exist: use `CronList` and `CronDelete` for any job whose prompt contains `chat-read` or `ccchat`.
 
-4. Confirm to the user that you've left the chat.
+4. **Stop the dashboard server** if no other agents are online:
+   ```bash
+   pkill -f "chat-dashboard.js" 2>/dev/null && echo "Dashboard stopped" || echo "No dashboard running"
+   ```
+   Skip this step if `node {{CCCHAT_ROOT}}/scripts/status.js --raw` shows other agents still online.
+
+5. Confirm to the user that you've left the chat.
