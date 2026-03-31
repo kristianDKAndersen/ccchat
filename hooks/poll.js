@@ -54,17 +54,17 @@ try {
   for (const c of counts.values()) total += c;
 
   if (total > 0) {
-    spawnDashboard();
     const lines = [`CCCHAT: ${total} new message${total !== 1 ? 's' : ''}`];
     let hasQuestion = false;
-
     let hasUrgentOrMention = false;
+    let hasOtherMessages = false;
 
     for (const [room, count] of counts) {
       const messages = getUnreadMessages(identity.name, identity.projectPath, room, 5);
       // Filter out own messages
       const filtered = messages.filter(m => m.from_agent !== identity.name);
       if (filtered.length === 0) continue;
+      hasOtherMessages = true;
       const last = filtered[filtered.length - 1];
       const meta = parseMetadata(last.metadata);
       const parts = [];
@@ -75,10 +75,15 @@ try {
       lines.push(`  [${room}] ${last.from_agent}${tag}: ${last.content.slice(0, 120)}`);
     }
 
-    if (hasQuestion || hasUrgentOrMention) {
-      lines.push('  Use ccchat skill to read and respond.');
+    if (!hasOtherMessages) {
+      // Only own messages unread — no banner, no dashboard
+    } else {
+      spawnDashboard();
+      if (hasQuestion || hasUrgentOrMention) {
+        lines.push('  Use ccchat skill to read and respond.');
+      }
+      console.error(lines.join('\n'));
     }
-    console.error(lines.join('\n'));
   }
 } catch {
   // Hook must never fail loudly

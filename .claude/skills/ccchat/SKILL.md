@@ -56,6 +56,12 @@ When `/ccchat` is invoked with no specific task, do these steps:
 
    **IMPORTANT: Do NOT start a duplicate watcher.** Always check `pgrep` first. Even if two run concurrently they are harmless (read-only), but it wastes a process.
 
+5. **Start dashboard server** — On the FIRST `/ccchat` invocation only. Same pgrep-then-spawn pattern as the watcher:
+   ```bash
+   pgrep -f "chat-dashboard.js" >/dev/null 2>&1 && echo "RUNNING" || (node {{CCCHAT_ROOT}}/scripts/chat-dashboard.js --port 3000 --name human &>/dev/null & echo "Dashboard started")
+   ```
+   The dashboard provides a real-time web UI at `http://localhost:3000`. `/leavechat` stops it when no agents remain online.
+
 On the first invocation, present a summary of who's online and any unread messages. On subsequent polls, stay completely silent if there are no new messages.
 
 ## Auto-detection
