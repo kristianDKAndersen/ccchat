@@ -3,7 +3,7 @@
 // Also usable standalone: node leave.js --handoff "Was working on X"
 
 import { execSync } from 'child_process';
-import { setAgentOffline, setHandoffNote, getDb, closeDb } from '../lib/db.js';
+import { setAgentOffline, setHandoffNote, releaseAgentTasks, insertMessage, getDb, closeDb } from '../lib/db.js';
 import { resolveIdentity } from '../lib/identity.js';
 
 const args = process.argv.slice(2);
@@ -19,6 +19,22 @@ try {
   if (handoff) {
     setHandoffNote(identity.name, identity.projectPath, handoff);
   }
+  // Release any in_progress plan tasks owned by this agent
+  try {
+    const released = releaseAgentTasks(identity.name);
+    for (const task of released) {
+      insertMessage({
+        type: 'system',
+        fromAgent: identity.name,
+        fromProject: identity.projectPath,
+        room: task.room,
+        content: `${identity.name} left — released task #${task.id}: ${task.title} back to pending (plan #${task.plan_id})`,
+      });
+    }
+  } catch {
+    // Best-effort — tables may not exist yet
+  }
+
   setAgentOffline(identity.name, identity.projectPath);
 
   // Also mark offline any other project registrations for this agent name.

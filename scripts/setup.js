@@ -30,7 +30,7 @@ const agentName  = getFlag('name') || basename(process.cwd());
 const room       = getFlag('room') || 'general';
 const projectDir = isGlobal ? null : process.cwd();
 
-const HOOK_FILES = ['poll.js', 'stop.js', 'leave.js', 'notify.js', 'compact-nudge.js', 'post-compact.js'];
+const HOOK_FILES = ['poll.js', 'stop.js', 'leave.js', 'notify.js'];
 
 function ensureDir(dir) {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
@@ -48,13 +48,10 @@ function mergeSettings(settingsPath, cmds) {
     return arr.some(e => e.hooks?.some(h => h.command?.includes(hookFile)));
   }
 
-  // UserPromptSubmit — poll + compact-nudge
+  // UserPromptSubmit — poll
   if (!settings.hooks.UserPromptSubmit) settings.hooks.UserPromptSubmit = [];
   if (!hasHook(settings.hooks.UserPromptSubmit, 'poll.js')) {
     settings.hooks.UserPromptSubmit.push({ hooks: [{ type: 'command', command: cmds.poll }] });
-  }
-  if (!hasHook(settings.hooks.UserPromptSubmit, 'compact-nudge.js')) {
-    settings.hooks.UserPromptSubmit.push({ hooks: [{ type: 'command', command: cmds.nudge }] });
   }
 
   // Stop
@@ -75,12 +72,6 @@ function mergeSettings(settingsPath, cmds) {
     settings.hooks.PostToolUse.push({ hooks: [{ type: 'command', command: cmds.notify }] });
   }
 
-  // PostCompact
-  if (!settings.hooks.PostCompact) settings.hooks.PostCompact = [];
-  if (!hasHook(settings.hooks.PostCompact, 'post-compact.js')) {
-    settings.hooks.PostCompact.push({ hooks: [{ type: 'command', command: cmds.postCompact }] });
-  }
-
   // StatusLine — only add if not already set
   if (!settings.statusLine) {
     settings.statusLine = { type: 'command', command: cmds.statusline };
@@ -93,7 +84,7 @@ function removeFromSettings(settingsPath) {
   if (!existsSync(settingsPath)) return;
   try {
     const settings = JSON.parse(readFileSync(settingsPath, 'utf8'));
-    for (const event of ['UserPromptSubmit', 'Stop', 'SessionEnd', 'PostToolUse', 'PostCompact']) {
+    for (const event of ['UserPromptSubmit', 'Stop', 'SessionEnd', 'PostToolUse']) {
       if (settings.hooks?.[event]) {
         settings.hooks[event] = settings.hooks[event].filter(e =>
           !e.hooks?.some(h => HOOK_FILES.some(f => h.command?.includes(f)))
@@ -122,9 +113,7 @@ function buildCmds(root) {
     stop:        `node ${join(root, 'hooks', 'stop.js')}`,
     leave:       `node ${join(root, 'hooks', 'leave.js')}`,
     notify:      `node ${join(root, 'hooks', 'notify.js')}`,
-    nudge:       `node ${join(root, 'hooks', 'compact-nudge.js')}`,
-    postCompact: `node ${join(root, 'hooks', 'post-compact.js')}`,
-    statusline:  `node ${join(root, 'scripts', 'statusline.js')}`,
+    statusline:  `bash ${join(root, 'scripts', 'statusline.sh')}`,
   };
 }
 
@@ -184,8 +173,8 @@ if (isGlobal) {
   // Hooks + statusline
   mergeSettings(join(globalClaudeDir, 'settings.json'), cmds);
   console.log('  + Hooks:      ~/.claude/settings.json');
-  console.log('                UserPromptSubmit: poll + compact-nudge');
-  console.log('                Stop, SessionEnd, PostToolUse, PostCompact');
+  console.log('                UserPromptSubmit: poll');
+  console.log('                Stop, SessionEnd, PostToolUse');
   console.log('  + StatusLine: context bar (🟢🟡🔴 at 60%/80%)');
 
   console.log('\nccchat v2 is now available in ALL Claude Code sessions.');
@@ -235,8 +224,8 @@ console.log(`  + Identity:   .claude/ccchat-identity.json (name: "${agentName}",
 // Hooks + statusline
 mergeSettings(join(claudeDir, 'settings.json'), cmds);
 console.log('  + Hooks:      .claude/settings.json');
-console.log('                UserPromptSubmit: poll + compact-nudge');
-console.log('                Stop, SessionEnd, PostToolUse, PostCompact');
+console.log('                UserPromptSubmit: poll');
+console.log('                Stop, SessionEnd, PostToolUse');
 console.log('  + StatusLine: context bar (🟢🟡🔴 at 60%/80%)');
 
 // Register agent in DB

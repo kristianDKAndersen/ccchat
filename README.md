@@ -33,7 +33,6 @@ Agents in separate Claude Code sessions communicate through a shared SQLite data
 **Intelligence**
 - Search with composable filters (`--pinned`, `--verified`, `--by <agent>`)
 - Thread-aware history — `--thread <id>` walks the full reply subtree (recursive CTE)
-- Room compaction — LLM-generated digests of old messages (HOT/WARM tiered retention via `claude -p`)
 - ADR Logger — auto-captures `[DECISION]` tagged messages to `docs/decisions.md` with structured records
 - Session catchup — handoff notes, unread, pinned, history backfill
 - Handoff notes — auto-saved on session end (48h TTL)
@@ -184,21 +183,6 @@ Live terminal UI for humans to participate in agent conversations. Features:
 
 Flags: `--name`, `--project`, `--room`
 
-### chat-compact.js — LLM-powered room compaction
-```bash
-node scripts/chat-compact.js --room general --dry-run     # preview what would be summarized
-node scripts/chat-compact.js --room general                # compact with defaults (20 hot, 200 limit)
-node scripts/chat-compact.js --room general --hot 10 --limit 500
-node scripts/chat-compact.js --room general --force        # re-compact even if existing digest overlaps
-```
-Summarizes old messages into a pinned digest using `claude -p`. Messages are partitioned into tiers:
-- **HOT** (last N messages) — preserved untouched
-- **WARM** (older messages) — summarized by Claude into a structured digest (Key Decisions, Action Items, Open Questions, Context)
-
-The digest is inserted as a pinned system message with metadata tracking the covered ID range. Detects existing digests to prevent duplicate compaction (use `--force` to override). Prompts exceeding 80K chars auto-truncate oldest WARM messages.
-
-Flags: `--room`, `--hot` (default 20), `--limit` (default 200), `--dry-run`, `--force`, `--json`, `--name`, `--project`
-
 ### chat-dashboard.js — Real-time web dashboard
 ```bash
 node scripts/chat-dashboard.js                             # start on localhost:3000
@@ -320,7 +304,6 @@ scripts/
   chat-pin.js        — Pin/unpin messages
   chat-task.js       — Task messages with status
   chat-catchup.js    — Session bootstrap
-  chat-compact.js    — LLM-powered room history compaction (HOT/WARM tiers)
   chat-watch.js      — Background watcher (fs.watch on sentinels, zero tokens idle)
   chat-dashboard.js  — Real-time web dashboard (HTTP + SSE, interactive messaging)
   chat-ui.js         — Interactive terminal chat client (batch render, compact grouping)
@@ -386,7 +369,6 @@ read_cursors (agent_name, project_hash, room, last_id)
 - **Sentinel fast-path** — `chat-send` touches per-agent sentinel files (`~/.claude/ccchat/notify/`); `chat-ask` polls sentinels at 500ms for near-instant reply detection, falls back to 3s polling without sentinel support
 - **Background watcher** — `chat-watch.js` uses `fs.watch()` on sentinel files for event-driven message detection (<500ms latency). Blocks silently with zero token cost, exits with data on arrival. Saves ~12k tokens/hour vs cron polling at idle
 - **Thread-aware history** — recursive CTE walks full reply subtrees from any parent message, enabling thread extraction and decision review
-- **LLM-powered compaction** — HOT/WARM/COLD tiered retention inspired by icarus-daedalus; `claude -p` generates structured digests, inserted as pinned system messages with ID range metadata for overlap detection
 - **Web dashboard with zero new deps** — Node built-in `http` module + SSE replaces the need for Express; single HTML file with inline CSS/JS, auto-started by poll hook on first unread message
 - **Dashboard as interactive client** — POST `/api/send` endpoint enables humans to send messages and reply to threads directly from the browser, with mention parsing and sentinel notifications
 - **DB-authoritative identity** — identity file is a write-once bootstrap artifact; DB is the source of truth. Divergence inserts a deduped system message (24h window) so it's persistent and searchable

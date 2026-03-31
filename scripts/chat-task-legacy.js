@@ -1,8 +1,12 @@
 #!/usr/bin/env node
+// DEPRECATED: Use chat-plan.js + chat-claim.js instead.
+// This file is kept for backward compatibility only.
+console.warn('⚠️  chat-task.js is deprecated. Use chat-plan.js + chat-claim.js instead.');
+
 // Create or update task messages. Tasks are regular messages with task metadata.
 // Usage:
-//   node chat-task.js --name <agent> --project <path> --message "Do X" --room general [--assign bob] [--urgent]
-//   node chat-task.js --update <id> --status done|open|in-progress|blocked [--evidence "proof"]
+//   node chat-task-legacy.js --name <agent> --project <path> --message "Do X" --room general [--assign bob] [--urgent]
+//   node chat-task-legacy.js --update <id> --status done|open|in-progress|blocked [--evidence "proof"]
 
 import { upsertAgent, insertMessage, getMessage, getDb, initCursorIfNew, updateCursor, closeDb } from '../lib/db.js';
 import { resolveIdentity } from '../lib/identity.js';

@@ -181,31 +181,15 @@ function getDecisionLog() {
 
 async function getCchatSummary() {
   try {
-    const { getUnreadCountAllRooms, getOnlineAgents, getOpenTasks, getAgentRooms, closeDb } = await import('../lib/db.js');
-    const { parseMetadata } = await import('../lib/format.js');
+    const { getUnreadCountAllRooms, getOnlineAgents, getActivePlansWithUnclaimedTasks, closeDb } = await import('../lib/db.js');
     const counts = getUnreadCountAllRooms(agentName, projectPath);
     const online = getOnlineAgents();
 
     const totalUnread = [...counts.values()].reduce((a, b) => a + b, 0);
     const roomCounts = Object.fromEntries(counts);
 
-    // Surface open tasks across agent's rooms
-    const rooms = getAgentRooms(agentName, projectPath);
-    const openTasks = [];
-    for (const room of rooms) {
-      const tasks = getOpenTasks(room);
-      for (const t of tasks) {
-        const meta = parseMetadata(t.metadata);
-        openTasks.push({
-          id: t.id,
-          room: t.room,
-          content: t.content.slice(0, 120),
-          assigned: meta.assigned || null,
-          from: t.from_agent,
-          created_at: t.created_at,
-        });
-      }
-    }
+    // Surface active plans with unclaimed tasks
+    const unclaimedPlans = getActivePlansWithUnclaimedTasks();
 
     closeDb();
 
@@ -214,7 +198,7 @@ async function getCchatSummary() {
       unread_by_room: roomCounts,
       online_agents: online.map(a => a.name),
       online_count: online.length,
-      ...(openTasks.length > 0 && { open_tasks: openTasks }),
+      ...(unclaimedPlans.length > 0 && { unclaimed_plans: unclaimedPlans }),
     };
   } catch {
     return { total_unread: 0, unread_by_room: {}, online_agents: [], online_count: 0, note: 'ccchat DB not available' };
@@ -251,7 +235,7 @@ async function main() {
     (sessionDiff && sessionDiff.changes && sessionDiff.changes.length > 0) ||
     (decisionLog.exists && decisionLog.recent?.length > 0) ||
     ccchat.total_unread > 0 ||
-    ccchat.open_tasks?.length > 0;
+    ccchat.unclaimed_plans?.length > 0;
 
   const snapshot = {
     project: basename(projectPath),
@@ -262,7 +246,7 @@ async function main() {
     ...(claudeMd.staleness === 'fresh' && { claude_md: { staleness: 'fresh', message: claudeMd.message } }),
     ...(sessionDiff && sessionDiff.changes?.length > 0 && { session_diff: sessionDiff }),
     ...(decisionLog.exists && decisionLog.recent?.length > 0 && { decision_log: decisionLog }),
-    ...((ccchat.total_unread > 0 || ccchat.open_tasks?.length > 0) && { ccchat }),
+    ...((ccchat.total_unread > 0 || ccchat.unclaimed_plans?.length > 0) && { ccchat }),
   };
 
   if (format === 'text') {
@@ -317,7 +301,7 @@ function printText(s, { claudeMd, sessionDiff, decisionLog, ccchat, hasGaps }) {
   }
 
   // ccchat
-  if (ccchat.total_unread > 0 || ccchat.open_tasks?.length > 0) {
+  if (ccchat.total_unread > 0 || ccchat.unclaimed_plans?.length > 0) {
     console.log('## ccchat');
     if (ccchat.total_unread > 0) {
       console.log(`  Unread: ${ccchat.total_unread}`);
@@ -325,11 +309,10 @@ function printText(s, { claudeMd, sessionDiff, decisionLog, ccchat, hasGaps }) {
     if (ccchat.online_count > 0) {
       console.log(`  Online: ${ccchat.online_agents.join(', ')}`);
     }
-    if (ccchat.open_tasks?.length > 0) {
-      console.log(`  Open tasks: ${ccchat.open_tasks.length}`);
-      for (const t of ccchat.open_tasks) {
-        const assignee = t.assigned ? ` → ${t.assigned}` : '';
-        console.log(`    #${t.id} [${t.room}] ${t.content}${assignee}`);
+    if (ccchat.unclaimed_plans?.length > 0) {
+      console.log(`  Active plans with unclaimed tasks:`);
+      for (const p of ccchat.unclaimed_plans) {
+        console.log(`    Plan #${p.id} '${p.title}' — ${p.unclaimed}/${p.total_tasks} tasks unclaimed`);
       }
     }
   }

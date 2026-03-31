@@ -9,14 +9,6 @@
             "command": "node /Users/awesome/dev/devtest/ccchat-improve/hooks/poll.js"
           }
         ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node /Users/awesome/dev/devtest/ccchat-improve/hooks/compact-nudge.js"
-          }
-        ]
       }
     ],
     "Stop": [
@@ -48,20 +40,11 @@
           }
         ]
       }
-    ],
-    "PostCompact": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node /Users/awesome/dev/devtest/ccchat-improve/hooks/post-compact.js"
-          }
-        ]
-      }
     ]
   },
   "statusLine": {
     "type": "command",
-    "command": "node /Users/awesome/dev/devtest/ccchat-improve/scripts/statusline.js"
+    "command": "bash /Users/awesome/dev/devtest/ccchat-improve/scripts/statusline.sh",
+    "padding": 1
   }
 }
