@@ -48,8 +48,8 @@ async function main() {
     }
 
     if (shouldBlock) {
-      lines.unshift(`CCCHAT: Urgent / mentioned`);
-      lines.push('  Use ccchat skill to read and respond.');
+      lines.unshift('CCCHAT: Needs response — reply via /ccchat, not your terminal');
+      lines.push('  DO NOT reply in your terminal. Use /ccchat to respond.');
       console.log(JSON.stringify({ decision: 'block', reason: lines.join('\n') }));
     }
     // Regular messages: don't block — the poll hook will show them on next prompt

@@ -5,7 +5,9 @@
 import { execSync, spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { upsertAgent, getUnreadCountAllRooms, getUnreadMessages, initCursorIfNew, closeDb } from '../lib/db.js';
+import { readFileSync, appendFileSync, existsSync } from 'fs';
+import { homedir } from 'os';
+import { upsertAgent, getUnreadCountAllRooms, getUnreadMessages, initCursorIfNew, getDb, projectHash, closeDb } from '../lib/db.js';
 import { resolveIdentity } from '../lib/identity.js';
 import { parseMetadata } from '../lib/format.js';
 
@@ -38,6 +40,51 @@ function spawnDashboard() {
     }, 1000);
   } catch {
     // Failed to start — silently skip
+  }
+}
+
+const DROPOFF_LOG = join(homedir(), '.claude', 'ccchat', 'dropoff-log.json');
+const DROPOFF_DEBOUNCE_MS = 5 * 60 * 1000; // 5 min debounce per agent+room
+const DROPOFF_AGE_THRESHOLD_MS = 2 * 60 * 1000; // 2 min before flagging
+
+function logDropoff(identity, counts, hasQuestion, hasMention) {
+  const d = getDb();
+  const hash = projectHash(identity.projectPath);
+
+  // Check agent's last_seen — if active in last 2 min, not a drop
+  const agent = d.prepare('SELECT last_seen FROM agents WHERE name = ? AND project_hash = ?').get(identity.name, hash);
+  if (agent && agent.last_seen) {
+    const lastSeen = new Date(agent.last_seen + 'Z').getTime();
+    if (Date.now() - lastSeen < DROPOFF_AGE_THRESHOLD_MS) return;
+  }
+
+  // Debounce: check recent log entries for this agent
+  let recentEntries = [];
+  if (existsSync(DROPOFF_LOG)) {
+    try {
+      const content = readFileSync(DROPOFF_LOG, 'utf8').trim();
+      if (content) recentEntries = content.split('\n').slice(-50).map(l => JSON.parse(l));
+    } catch { /* corrupt file — continue */ }
+  }
+
+  const now = Date.now();
+  for (const [room, count] of counts) {
+    // Debounce: skip if we logged this agent+room in last 5 min
+    const recent = recentEntries.find(e =>
+      e.agent === identity.name && e.room === room &&
+      (now - new Date(e.timestamp).getTime()) < DROPOFF_DEBOUNCE_MS
+    );
+    if (recent) continue;
+
+    const entry = {
+      agent: identity.name,
+      room,
+      unread_count: count,
+      has_questions: hasQuestion,
+      has_mentions: hasMention,
+      timestamp: new Date().toISOString()
+    };
+    appendFileSync(DROPOFF_LOG, JSON.stringify(entry) + '\n');
   }
 }
 
@@ -80,9 +127,18 @@ try {
     } else {
       spawnDashboard();
       if (hasQuestion || hasUrgentOrMention) {
-        lines.push('  Use ccchat skill to read and respond.');
+        lines.push('  DO NOT reply in your terminal. Use /ccchat to respond.');
+      } else {
+        lines.push('  New messages in ccchat — check /ccchat when ready.');
       }
       console.error(lines.join('\n'));
+
+      // Drop-off tracking: log when questions/@mentions go unread and agent is idle
+      if (hasQuestion || hasUrgentOrMention) {
+        try {
+          logDropoff(identity, counts, hasQuestion, hasUrgentOrMention);
+        } catch { /* tracking must never fail the hook */ }
+      }
     }
   }
 } catch {

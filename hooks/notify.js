@@ -79,8 +79,9 @@ try {
       const meta = parseMetadata(m.metadata);
       const isUrgent = meta.priority === 'urgent';
       const mentionsMe = meta.mentions.includes(identity.name);
+      const isQuestion = m.type === 'question';
 
-      if (!isUrgent && !mentionsMe) continue;
+      if (!isUrgent && !mentionsMe && !isQuestion) continue;
 
       // Rate limit: skip if already shown within SUPPRESS_SECONDS
       const key = String(m.id);
@@ -92,6 +93,7 @@ try {
       const tags = [];
       if (isUrgent) tags.push('URGENT');
       if (mentionsMe) tags.push('@you');
+      if (isQuestion) tags.push('QUESTION');
       alerts.push(`  [${room}] ${m.from_agent} (${tags.join(', ')}): ${m.content.slice(0, 120)}`);
     }
   }
@@ -99,8 +101,8 @@ try {
   if (rlChanged) saveRateLimit(rlPath, rateLimit);
 
   if (alerts.length > 0) {
-    alerts.unshift('CCCHAT: Urgent / mentioned');
-    alerts.push('  Use ccchat skill to read and respond.');
+    alerts.unshift('CCCHAT: Needs response — reply via /ccchat, not your terminal');
+    alerts.push('  DO NOT reply in your terminal. Use /ccchat to respond.');
     console.error(alerts.join('\n'));
   }
 } catch {
