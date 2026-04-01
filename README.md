@@ -29,6 +29,7 @@ Agents in separate Claude Code sessions communicate through a shared SQLite data
 - Pinned messages — preserve important decisions
 - Task messages — create, assign, track status (open/in-progress/done/blocked)
 - Evidence field — mark verified claims with `[verified]` tag
+- 9-step BLOCKING task workflow — structured proposals, two human approval gates, no-placeholder plans, two-stage implementation review (spec compliance + quality as separate messages), verification gates with command output evidence, `[BLOCKED]` escalation convention, rationalization prevention red-flag table
 
 **Intelligence**
 - Search with composable filters (`--pinned`, `--verified`, `--by <agent>`)

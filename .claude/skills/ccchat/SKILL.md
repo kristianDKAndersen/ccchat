@@ -16,7 +16,62 @@ description: >
 
 # ccchat
 
-Multi-agent chat system. Scripts are at `/Users/awesome/dev/devtest/ccchat-improve/scripts/`. No server needed — reads/writes SQLite directly.
+Multi-agent chat system. Scripts are at `{{CCCHAT_ROOT}}/scripts/`. No server needed — reads/writes SQLite directly.
+
+## BLOCKING: Task Workflow
+
+Before implementing ANY task proposed or requested in ccchat:
+
+1. **Propose** — post a structured proposal in chat. A valid proposal MUST include:
+   - **Problem statement** — what needs to change and why
+   - **2-3 options** — each with explicit trade-offs (what it costs, what you give up)
+   - **Recommendation** — which option you favor and why
+   
+   A wall of text that says "here's what I'll do" is NOT a valid proposal. No approval = no plan. No exceptions.
+
+2. **Peer review of proposal** — other agents challenge the proposal. Find weaknesses, demand evidence, name tradeoffs. The proposal must survive scrutiny before moving forward.
+
+3. **Approve direction** — get human approval of the proposed approach before spending effort on planning. Human confirms the direction is worth pursuing.
+
+4. **Plan** — after direction is approved, create a plan via `chat-plan.js` with broken-down tasks. Plans must be **concrete**: every task specifies exact file paths, exact commands, or actual code snippets. No "implement X", no "handle errors appropriately", no "add tests for the above". If any agent would have to guess what a task means, the plan is not ready. Vague tasks are a process violation — the planner must revise before claiming is allowed.
+
+5. **Approve plan** — human reviews the written plan and approves or dismisses. No implementation begins until the plan is explicitly approved. This is the second gate — direction was confirmed at step 3, now the detailed plan gets sign-off.
+
+6. **Delegate** — split tasks to participating agents via `chat-claim.js`
+
+7. **Implement & verify** — agents execute claimed tasks. No task may be marked done without showing command output as evidence. Run the command, paste the output, confirm it matches expectations. The following are process violations:
+   - "Looks right"
+   - "Should work"
+   - "I'm confident"
+   - "Tests pass" (without showing the output)
+   - Any claim of completion without pasted evidence
+
+8. **Implementation review** — two-stage review of completed work, posted as **separate messages**:
+   - **Stage 1 — Spec compliance:** Compare the implementation against the approved proposal message. List any gaps, missing pieces, or deviations. Post as: `spec review: [pass/fail] — [details]`
+   - **Stage 2 — Quality review:** Assess whether the implementation is well-built. Post as: `quality review: [pass/fail] — [details]`
+   
+   Both stages must pass before a task closes. A combined review message is a process violation. Any agent can do either pass — two different agents may split the stages. Flexible on who, strict on what.
+
+9. **Escalate if blocked** — when an agent working on a claimed task hits a wall, they MUST post a message tagged `[BLOCKED]` explaining what they need. Going silent or guessing forward are both process violations. The `[BLOCKED]` tag creates a conversation — other agents should respond with help, context, or reassignment.
+
+Skipping ANY step in this workflow is a process violation. No exceptions, even for "small" or "obvious" changes.
+
+**Escalation:** First violation after this rule is in place → the team builds structural enforcement (proposal message types with approval gates).
+
+### Red flags: process shortcuts
+
+Common rationalizations agents use to skip steps. If you catch yourself thinking any of these, stop — you are about to violate the workflow.
+
+| Rationalization | Why it's wrong |
+|---|---|
+| "This is too small to need a proposal" | Every change has trade-offs worth examining. Small changes with unexamined assumptions cause the most rework. |
+| "I already reviewed it mentally" | Mental review is invisible and unverifiable. Post it as a message or it didn't happen. |
+| "Tests pass so it's done" | Tests passing is necessary but not sufficient. Show the output. Did you check against the proposal spec? |
+| "I'll test after" | Evidence must precede the done claim, not follow it. The verification gate exists because "I'll do it later" means "I won't do it." |
+| "Minor concern but probably fine" | Name the concern specifically or retract it. Vague concern is noise that creates false confidence. |
+| "The other agent said it works" | Verify before trusting. Check the code, run the test. Another agent's confidence is not evidence. |
+| "We already discussed this" | Discussion is not approval. Point to the explicit approval message or restart the step. |
+| "I'll clean up the proposal later" | A proposal without options and trade-offs is not a proposal. Write it properly the first time. |
 
 ## Quick start
 
@@ -24,7 +79,7 @@ When `/ccchat` is invoked with no specific task, do these steps:
 
 1. **Read** unread messages (use `--quiet` to suppress empty output):
    ```bash
-   node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-read.js --name "<agent-name>" --rooms "general" --quiet
+   node {{CCCHAT_ROOT}}/scripts/chat-read.js --name "<agent-name>" --rooms "general" --quiet
    ```
    Use the current project's directory name as agent name (e.g. "maestro", "frontend").
 
@@ -32,7 +87,7 @@ When `/ccchat` is invoked with no specific task, do these steps:
 
 3. **Show status** — only on the FIRST invocation or when the user explicitly asks. Do NOT show status on every poll.
    ```bash
-   node /Users/awesome/dev/devtest/ccchat-improve/scripts/status.js --raw
+   node {{CCCHAT_ROOT}}/scripts/status.js --raw
    ```
 
 4. **Start background watcher** — On the FIRST `/ccchat` invocation only, start the watcher. First check if one is already running:
@@ -41,7 +96,7 @@ When `/ccchat` is invoked with no specific task, do these steps:
    ```
    If NOT running, start it as a background command:
    ```
-   Bash(command="node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-watch.js --name \"<agent-name>\" --rooms \"general\" --timeout 300", run_in_background=true)
+   Bash(command="node {{CCCHAT_ROOT}}/scripts/chat-watch.js --name \"<agent-name>\" --rooms \"general\" --timeout 300", run_in_background=true)
    ```
    Replace `<agent-name>` with the actual agent name.
 
@@ -83,38 +138,38 @@ Run these directly via Bash. Replace `<name>` with the agent name.
 
 ### Send a message
 ```bash
-node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-send.js --message "<message>" --room general --name "<name>"
+node {{CCCHAT_ROOT}}/scripts/chat-send.js --message "<message>" --room general --name "<name>"
 ```
 
 ### Ask a question (waits for responses)
 ```bash
-node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-ask.js --name "<name>" --question "<question>" --room general --timeout 120
+node {{CCCHAT_ROOT}}/scripts/chat-ask.js --name "<name>" --question "<question>" --room general --timeout 120
 ```
 This blocks until responses arrive or timeout. For long waits, use a subagent:
 ```
-Agent(description="ccchat ask peers", prompt="Run: node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-ask.js --name '<name>' --question '<question>' --room general --timeout 120. Return the raw JSON output.")
+Agent(description="ccchat ask peers", prompt="Run: node {{CCCHAT_ROOT}}/scripts/chat-ask.js --name '<name>' --question '<question>' --room general --timeout 120. Return the raw JSON output.")
 ```
 
 ### Reply to a message
 ```bash
-node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-send.js --message "<reply>" --room general --name "<name>" --reply-to <id>
+node {{CCCHAT_ROOT}}/scripts/chat-send.js --message "<reply>" --room general --name "<name>" --reply-to <id>
 ```
 IMPORTANT: Always use `--reply-to <questionId>` when responding to a `chat-ask` question. Without it, `chat-ask` will not collect your response (it filters by `parent_id`).
 
 ### Read unread messages
 ```bash
-node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-read.js --name "<name>" --rooms "general"
+node {{CCCHAT_ROOT}}/scripts/chat-read.js --name "<name>" --rooms "general"
 ```
 
 ### View message history
 ```bash
-node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-history.js --room general [--last 20] [--before <id>]
+node {{CCCHAT_ROOT}}/scripts/chat-history.js --room general [--last 20] [--before <id>]
 ```
 Read-only — does not advance the read cursor. Use `--before <id>` to paginate backwards.
 
 ### Check status
 ```bash
-node /Users/awesome/dev/devtest/ccchat-improve/scripts/status.js --raw
+node {{CCCHAT_ROOT}}/scripts/status.js --raw
 ```
 
 ## Choosing the right command

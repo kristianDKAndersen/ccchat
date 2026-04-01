@@ -71,6 +71,7 @@ node scripts/setup.js --name test    # setup current project
 - **`--urgent` priority** — triggers stop hook blocking
 - **Pinned messages** — preserve important decisions
 - **Collaborative plans** — draft/active/completed plans with atomic task claiming (replaces chat-task.js)
+- **9-step task workflow** — BLOCKING process: propose (structured) → peer review → approve direction → plan (no placeholders) → approve plan → delegate → implement & verify → two-stage implementation review (spec compliance + quality, separate messages) → escalate if blocked (`[BLOCKED]` convention). Two human approval gates. Rationalization prevention red-flag table in skill doc
 - **Evidence field** — mark verified claims with `[verified]` tag
 - **Search** — composable filters across messages
 - **Session catchup** — handoff notes + unread + pinned + history backfill
