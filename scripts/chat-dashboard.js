@@ -10,7 +10,7 @@ import {
   getHistory, getOnlineAgents, getPinnedMessages, searchMessages,
   getThreadMessages, getAllRooms, getMessagesSinceGlobal, getMessageCount,
   upsertAgent, insertMessage, initCursorIfNew, updateCursor, getMaxMessageId,
-  closeDb
+  deleteRoom, closeDb
 } from '../lib/db.js';
 import { parseMetadata, parseMentions } from '../lib/format.js';
 import { touchSentinel } from '../lib/sentinel.js';
@@ -216,6 +216,59 @@ const server = createServer(async (req, res) => {
       const id = parseInt(params.get('id') || '0', 10);
       if (!id) { jsonResponse(res, [], 400); return; }
       jsonResponse(res, getThreadMessages(id).map(formatMsg));
+      return;
+    }
+
+    // POST /api/shutdown — gracefully stop the dashboard
+    if (path === '/api/shutdown' && req.method === 'POST') {
+      jsonResponse(res, { ok: true, message: 'shutting down' });
+      setTimeout(shutdown, 100);
+      return;
+    }
+
+    // POST /api/rooms/create — create a new room
+    if (path === '/api/rooms/create' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { name: roomName } = JSON.parse(body);
+      if (!roomName) { jsonResponse(res, { error: 'name required' }, 400); return; }
+      if (!/^[a-z0-9][a-z0-9-]*$/.test(roomName)) {
+        jsonResponse(res, { error: 'invalid room name (lowercase alphanumeric + hyphens)' }, 400);
+        return;
+      }
+      const existing = getAllRooms();
+      if (existing.includes(roomName)) {
+        jsonResponse(res, { error: 'room already exists' }, 409);
+        return;
+      }
+      // Create room by inserting a system message
+      upsertAgent({ name: SENDER_NAME, projectPath: SENDER_PROJECT, rooms: [roomName] });
+      initCursorIfNew(SENDER_NAME, SENDER_PROJECT, roomName);
+      insertMessage({
+        type: 'system',
+        fromAgent: SENDER_NAME,
+        fromProject: SENDER_PROJECT,
+        room: roomName,
+        content: `Room #${roomName} created`,
+        metadata: { mentions: [], priority: 'normal' },
+      });
+      const maxId = getMaxMessageId(roomName);
+      updateCursor(SENDER_NAME, SENDER_PROJECT, roomName, maxId);
+      jsonResponse(res, { ok: true, room: roomName });
+      return;
+    }
+
+    // POST /api/rooms/delete — remove an unused room
+    if (path === '/api/rooms/delete' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { room } = JSON.parse(body);
+      if (!room) { jsonResponse(res, { error: 'room required' }, 400); return; }
+      if (room === 'general') { jsonResponse(res, { error: 'cannot delete general' }, 400); return; }
+      try {
+        deleteRoom(room);
+        jsonResponse(res, { ok: true, deleted: room });
+      } catch (err) {
+        jsonResponse(res, { error: err.message }, 400);
+      }
       return;
     }
 

@@ -134,11 +134,11 @@ body {
 }
 
 .agent-item {
-  padding: 4px 12px;
+  padding: 6px 12px;
   font-size: 12px;
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .agent-dot {
@@ -404,6 +404,51 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+/* ── Modal ─────────────────────────────────────────────────────────── */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 100;
+  align-items: center;
+  justify-content: center;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  width: 320px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+.modal h2 { font-size: 14px; margin-bottom: 12px; color: var(--accent); }
+.modal label { font-size: 12px; color: var(--text-dim); display: block; margin-bottom: 4px; }
+.modal input[type="text"] {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+.modal input[type="text"]:focus { outline: none; border-color: var(--accent); }
+.modal .agent-check { display: flex; align-items: center; gap: 6px; padding: 3px 0; font-size: 12px; }
+.modal .agent-check input { margin: 0; }
+.modal .modal-actions { display: flex; gap: 8px; margin-top: 12px; justify-content: flex-end; }
+.modal .modal-actions button {
+  border: none; border-radius: 4px; padding: 6px 14px;
+  font-family: inherit; font-size: 12px; cursor: pointer;
+}
+.modal .btn-create { background: var(--accent); color: var(--bg); font-weight: 600; }
+.modal .btn-cancel { background: var(--bg); color: var(--text-dim); border: 1px solid var(--border) !important; }
+.modal .modal-error { color: var(--red); font-size: 11px; margin-bottom: 8px; display: none; }
 </style>
 </head>
 <body>
@@ -416,13 +461,33 @@ body {
       <input type="text" id="search-input" placeholder="Search messages...">
       <button id="search-btn">Search</button>
     </div>
+    <button id="quit-btn" title="Quit dashboard (Ctrl+Q)" style="background:var(--red);color:var(--bg);border:none;border-radius:4px;padding:4px 10px;font-family:inherit;font-size:12px;cursor:pointer;margin-left:8px;">Quit</button>
   </div>
 
   <div class="sidebar">
     <div class="sidebar-section">Rooms</div>
     <div id="room-list"></div>
+    <div style="padding:6px 12px;">
+      <button id="create-room-btn" style="width:100%;background:none;border:1px dashed var(--border);color:var(--text-dim);border-radius:4px;padding:4px;font-family:inherit;font-size:11px;cursor:pointer;">+ Room</button>
+    </div>
     <div class="sidebar-section" style="margin-top:12px">Online</div>
     <div id="agent-list"></div>
+  </div>
+
+  <!-- Create Room Modal -->
+  <div class="modal-overlay" id="create-room-modal">
+    <div class="modal">
+      <h2>Create Room</h2>
+      <label for="new-room-name">Room name</label>
+      <input type="text" id="new-room-name" placeholder="e.g. design-review">
+      <div class="modal-error" id="room-error"></div>
+      <label>Invite agents</label>
+      <div id="invite-agent-list" style="margin-bottom:4px;max-height:150px;overflow-y:auto;"></div>
+      <div class="modal-actions">
+        <button class="btn-cancel" id="room-modal-cancel">Cancel</button>
+        <button class="btn-create" id="room-modal-create">Create</button>
+      </div>
+    </div>
   </div>
 
   <div class="main" style="display:flex; flex-direction:row;">
@@ -563,9 +628,29 @@ function renderRooms() {
   for (const r of rooms) {
     const el = document.createElement('div');
     el.className = 'room-item' + (r.name === currentRoom ? ' active' : '');
+    const deleteBtn = r.name === 'general' ? '' :
+      `<span class="room-delete" data-room="${escapeHtml(r.name)}" title="Delete room" style="color:var(--text-dim);cursor:pointer;font-size:14px;margin-left:4px;">&times;</span>`;
     el.innerHTML = `<span>#${escapeHtml(r.name)}</span>` +
-      (r.count ? `<span class="room-badge">${r.count}</span>` : '');
-    el.addEventListener('click', () => switchRoom(r.name));
+      `<span style="margin-left:auto;display:flex;align-items:center;gap:4px;">` +
+      (r.count ? `<span class="room-badge">${r.count}</span>` : '') +
+      deleteBtn + `</span>`;
+    el.querySelector('span').addEventListener('click', () => switchRoom(r.name));
+    const del = el.querySelector('.room-delete');
+    if (del) {
+      del.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (!confirm(`Delete room "${r.name}" and all its messages?`)) return;
+        try {
+          await fetch('/api/rooms/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ room: r.name }),
+          });
+          if (currentRoom === r.name) await switchRoom('general');
+          await loadRooms();
+        } catch {}
+      });
+    }
     list.appendChild(el);
   }
 }
@@ -578,9 +663,13 @@ function renderAgents() {
     el.className = 'agent-item';
     const color = nameColor(a.name);
     const proj = a.project.split('/').pop();
-    el.innerHTML = `<span class="agent-dot" style="background:${color}"></span>` +
+    const showProj = proj !== a.name ? `<span class="agent-project">${escapeHtml(proj)}</span>` : '';
+    const roomList = (a.rooms || []).map(r => '#' + r).join(' ');
+    el.innerHTML = `<div style="display:flex;align-items:center;gap:6px;">` +
+      `<span class="agent-dot" style="background:${color}"></span>` +
       `<span class="agent-name" style="color:${color}">${escapeHtml(a.name)}</span>` +
-      `<span class="agent-project">${escapeHtml(proj)}</span>`;
+      showProj + `</div>` +
+      `<div style="font-size:10px;color:var(--text-dim);padding-left:12px;">${escapeHtml(roomList)}</div>`;
     list.appendChild(el);
   }
   if (agents.length === 0) {
@@ -823,6 +912,111 @@ async function init() {
 }
 
 init();
+
+// ── Create room + invite ──────────────────────────────────────────────
+
+document.getElementById('create-room-btn').addEventListener('click', () => {
+  const modal = document.getElementById('create-room-modal');
+  const nameInput = document.getElementById('new-room-name');
+  const errEl = document.getElementById('room-error');
+  const list = document.getElementById('invite-agent-list');
+
+  nameInput.value = '';
+  errEl.style.display = 'none';
+  list.innerHTML = '';
+
+  // Populate online agents as checkboxes
+  for (const a of agents) {
+    const div = document.createElement('div');
+    div.className = 'agent-check';
+    const color = nameColor(a.name);
+    div.innerHTML = `<input type="checkbox" value="${escapeHtml(a.name)}"> <span style="color:${color}">${escapeHtml(a.name)}</span>`;
+    list.appendChild(div);
+  }
+
+  modal.classList.add('open');
+  nameInput.focus();
+});
+
+document.getElementById('room-modal-cancel').addEventListener('click', () => {
+  document.getElementById('create-room-modal').classList.remove('open');
+});
+
+document.getElementById('create-room-modal').addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) e.currentTarget.classList.remove('open');
+});
+
+document.getElementById('room-modal-create').addEventListener('click', async () => {
+  const nameInput = document.getElementById('new-room-name');
+  const errEl = document.getElementById('room-error');
+  const roomName = nameInput.value.trim().toLowerCase();
+
+  if (!roomName || !/^[a-z0-9][a-z0-9-]*$/.test(roomName)) {
+    errEl.textContent = 'Lowercase letters, numbers, and hyphens only';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/rooms/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: roomName }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      errEl.textContent = data.error || 'Failed to create room';
+      errEl.style.display = 'block';
+      return;
+    }
+
+    // Collect invited agents
+    const invited = [...document.querySelectorAll('#invite-agent-list input:checked')]
+      .map(cb => cb.value);
+
+    // Send invite @mentions to general
+    if (invited.length > 0) {
+      const mentions = invited.map(n => '@' + n).join(', ');
+      await fetch('/api/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: `Created #${roomName} and invited ${mentions} — join with /ccchat`,
+          room: 'general',
+        }),
+      });
+    }
+
+    document.getElementById('create-room-modal').classList.remove('open');
+    await loadRooms();
+    await switchRoom(roomName);
+  } catch {
+    errEl.textContent = 'Network error';
+    errEl.style.display = 'block';
+  }
+});
+
+document.getElementById('new-room-name').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') document.getElementById('room-modal-create').click();
+  if (e.key === 'Escape') document.getElementById('room-modal-cancel').click();
+});
+
+// ── Quit dashboard ────────────────────────────────────────────────────
+
+document.getElementById('quit-btn').addEventListener('click', async () => {
+  if (!confirm('Shut down the dashboard?')) return;
+  try {
+    await fetch('/api/shutdown', { method: 'POST' });
+  } catch {}
+  document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;color:var(--text-dim);font-family:monospace;">Dashboard stopped.</div>';
+});
+
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'q') {
+    e.preventDefault();
+    document.getElementById('quit-btn').click();
+  }
+});
 </script>
 </body>
 </html>

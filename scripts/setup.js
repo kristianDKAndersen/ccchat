@@ -30,7 +30,7 @@ const agentName  = getFlag('name') || basename(process.cwd());
 const room       = getFlag('room') || 'general';
 const projectDir = isGlobal ? null : process.cwd();
 
-const HOOK_FILES = ['poll.js', 'stop.js', 'leave.js', 'notify.js'];
+const HOOK_FILES = ['poll.js', 'stop.js', 'leave.js', 'notify.js', 'empty-project.js'];
 
 function ensureDir(dir) {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
@@ -72,6 +72,34 @@ function mergeSettings(settingsPath, cmds) {
     settings.hooks.PostToolUse.push({ hooks: [{ type: 'command', command: cmds.notify }] });
   }
 
+  // UserPromptSubmit — empty-project nudge
+  if (!hasHook(settings.hooks.UserPromptSubmit, 'empty-project.js')) {
+    // Add to existing UserPromptSubmit entry's hooks array
+    const existing = settings.hooks.UserPromptSubmit.find(e => e.hooks?.some(h => h.command?.includes('poll.js')));
+    if (existing) {
+      existing.hooks.push({ type: 'command', command: cmds.emptyProject });
+    } else {
+      settings.hooks.UserPromptSubmit.push({ hooks: [{ type: 'command', command: cmds.emptyProject }] });
+    }
+  }
+
+  // Permissions — ensure ccchat scripts are allowed
+  if (!settings.permissions) settings.permissions = {};
+  if (!settings.permissions.allow) settings.permissions.allow = [];
+  const scriptPerms = [
+    'chat-send.js', 'chat-read.js', 'chat-ask.js', 'chat-history.js',
+    'chat-search.js', 'chat-join.js', 'chat-leave.js', 'chat-pin.js',
+    'chat-plan.js', 'chat-claim.js', 'chat-task.js', 'chat-catchup.js',
+    'chat-watch.js', 'chat-dashboard.js', 'status.js', 'session-bootstrap.js',
+    'setup.js',
+  ].map(s => `Bash(node ${cmds.root}/scripts/${s}:*)`);
+  const miscPerms = ['Bash(pgrep -f:*)', 'Bash(pkill -f "chat-watch.js:*)'];
+  for (const perm of [...scriptPerms, ...miscPerms]) {
+    if (!settings.permissions.allow.includes(perm)) {
+      settings.permissions.allow.push(perm);
+    }
+  }
+
   // StatusLine — only add if not already set
   if (!settings.statusLine) {
     settings.statusLine = { type: 'command', command: cmds.statusline };
@@ -109,11 +137,13 @@ function copyFileWithReplacements(src, dest) {
 
 function buildCmds(root) {
   return {
-    poll:        `node ${join(root, 'hooks', 'poll.js')}`,
-    stop:        `node ${join(root, 'hooks', 'stop.js')}`,
-    leave:       `node ${join(root, 'hooks', 'leave.js')}`,
-    notify:      `node ${join(root, 'hooks', 'notify.js')}`,
-    statusline:  `bash ${join(root, 'scripts', 'statusline.sh')}`,
+    root,
+    poll:         `node ${join(root, 'hooks', 'poll.js')}`,
+    stop:         `node ${join(root, 'hooks', 'stop.js')}`,
+    leave:        `node ${join(root, 'hooks', 'leave.js')}`,
+    notify:       `node ${join(root, 'hooks', 'notify.js')}`,
+    emptyProject: `node ${join(root, 'hooks', 'empty-project.js')}`,
+    statusline:   `bash ${join(root, 'scripts', 'statusline.sh')}`,
   };
 }
 
