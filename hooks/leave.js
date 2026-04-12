@@ -3,7 +3,7 @@
 // Also usable standalone: node leave.js --handoff "Was working on X"
 
 import { execSync } from 'child_process';
-import { setAgentOffline, setHandoffNote, releaseAgentTasks, insertMessage, getDb, closeDb } from '../lib/db.js';
+import { setAgentOffline, setHandoffNote, releaseAgentTasks, insertMessage, getDb, projectHash, closeDb } from '../lib/db.js';
 import { resolveIdentity } from '../lib/identity.js';
 
 const args = process.argv.slice(2);
@@ -37,9 +37,20 @@ try {
 
   setAgentOffline(identity.name, identity.projectPath);
 
+  // Mark offline ALL agents for this project_hash — not just the resolved name.
+  // Prevents ghost agents: if a project previously registered under a different name
+  // (e.g., "maestro" then "d-kristian"), stale names would linger as online.
+  const d = getDb();
+  const hash = projectHash(identity.projectPath);
+  try {
+    d.prepare("UPDATE agents SET online = 0, last_seen = datetime('now') WHERE project_hash = ? AND online = 1")
+      .run(hash);
+  } catch {
+    // Best-effort
+  }
+
   // Also mark offline any other project registrations for this agent name.
   // An agent may have registered from multiple projects (e.g., via cross-project chat).
-  const d = getDb();
   try {
     d.prepare("UPDATE agents SET online = 0, last_seen = datetime('now') WHERE name = ? AND online = 1")
       .run(identity.name);

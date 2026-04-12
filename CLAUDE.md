@@ -27,6 +27,7 @@ node scripts/setup.js --name test    # setup current project
 - `db.js` — SQLite access layer, schema, all queries
 - `format.js` — Message formatting, parsing, mention extraction, display utilities
 - `identity.js` — Agent identity resolution from flags or `.claude/ccchat-identity.json`, with DB-authoritative validation
+- `sentinel.js` — Sentinel file helpers for fast-path message notification (touch, check mtime, cleanup)
 
 ### Scripts (`scripts/`)
 - `chat-send.js` — Send a message (`--reply-to <id>` for threading, `--to` for DMs)
@@ -38,6 +39,8 @@ node scripts/setup.js --name test    # setup current project
 - `chat-search.js` — Search messages with filters (`--pinned`, `--verified`, `--by <agent>`)
 - `chat-pin.js` — Pin/unpin messages, list pinned messages in a room
 - `chat-plan.js` — Collaborative planning: create/activate/add-task/show/list/complete plans
+- `chat-claim.js` — Atomic task claiming: claim/complete/release tasks, show plan status
+- `chat-preclaim.js` — Pre-claim enforcement gate: check + claim atomically (exits 0 on success, 1 if taken)
 - `chat-task-legacy.js` — DEPRECATED: old task messages (use chat-plan.js + chat-claim.js instead)
 - `chat-catchup.js` — Bootstrap new agents: unread + handoff notes + recent history
 - `chat-ui.js` — Interactive terminal chat client for humans (live polling, ANSI colors, /commands)
@@ -64,6 +67,7 @@ node scripts/setup.js --name test    # setup current project
 | `notify.js` | PostToolUse | Stderr banner for urgent @mentions between tool calls (30s rate limit) |
 | `leave.js` | SessionEnd | Marks agent offline, optionally saves handoff notes. Kills dashboard if no agents remain online |
 | `poll-gemini.js` | BeforeAgent | Unread banner for Gemini CLI integration |
+| `empty-project.js` | UserPromptSubmit | Nudges `/summon` in empty projects (no CLAUDE.md). Once per session |
 
 ## Features
 
@@ -82,7 +86,7 @@ node scripts/setup.js --name test    # setup current project
 - **Decision log integration** — surfaces .decisions/log.yaml dead-ends in bootstrap output
 - **ADR Logger** — auto-captures `[DECISION]` tagged messages to `docs/decisions.md` with structured records (rejected alternatives, rationale). Warns if alternatives missing
 - **Sentinel fast-path** — `chat-send` touches per-agent sentinel files after insert; `chat-watch` uses `fs.watch()` on sentinels for event-driven detection (<500ms); `chat-ask` polls sentinels at 500ms for reply detection. Falls back to interval polling without sentinel support
-- **Room join/leave** — first-class `chat-join.js` / `chat-leave.js` scripts with atomic DB + sentinel + event hook stub operations. Cannot leave `general`
+- **Room join/leave** — first-class `chat-join.js` / `chat-leave.js` scripts with atomic DB + sentinel + event hook stub operations. Cannot leave protected rooms (`general`, `lobby`)
 - **Identity validation** — DB-authoritative identity resolution. Divergence between `.claude/ccchat-identity.json` and DB emits stderr warning; DB wins
 - **Open task surfacing** — session bootstrap now shows open tasks across agent's rooms
 - **Background watcher** — `chat-watch.js` replaces cron polling. Blocks silently (zero tokens) until messages arrive, then exits with data. `--persist` flag enables self-respawn with exponential backoff (no manual respawn needed). Saves ~12k tokens/hour vs cron at idle
@@ -96,6 +100,7 @@ messages (id, type, from_agent, from_project, to_agent, room, content, metadata,
 read_cursors (agent_name, project_hash, room, last_id)
 plans (id, title, room, created_by, source_message_id, status, created_at, updated_at)
 plan_tasks (id, plan_id, seq, title, description, verify, status, owner, claimed_at, completed_at, blocked_reason, created_at)
+planner_locks (room, agent_name, claimed_at)
 ```
 
 ## Testing
@@ -143,5 +148,5 @@ node scripts/status.js --raw
 - Sentinel files (`~/.claude/ccchat/notify/`) — touched by senders, checked by chat-ask for fast-path reply detection without a daemon. Replies touch parent author only; broadcasts touch all online room agents. Best-effort — falls back to polling if sentinels are absent
 - DB-authoritative identity — identity file is a write-once bootstrap artifact; DB is the source of truth. Divergence warns on stderr, DB wins
 - Event hook stubs — no-op `emitEvent()` calls in join/leave, designed to become a real event bus when criteria are met (3rd stub, 2+ workarounds, or latency degradation)
-- `general` room is permanent — agents cannot leave it, preventing accidental isolation
+- Protected rooms (`general`, `lobby`) — agents cannot leave these, preventing accidental isolation
 - Watcher self-respawn — `--persist` mode with exponential backoff (500ms base, 30s max, 20 restart ceiling) resets after 60s of stable operation

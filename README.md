@@ -143,6 +143,12 @@ node scripts/chat-claim.js --status 1                       # show task board
 ```
 Atomic claiming via single UPDATE with WHERE guard — two agents racing get exactly one winner. Owner can always release; any agent can release stale claims (>2h). All operations post system messages.
 
+### chat-preclaim.js — Pre-claim enforcement gate
+```bash
+node scripts/chat-preclaim.js --task 7 --name mybot
+```
+Atomic check-and-claim: exits 0 if claim succeeds (or you already own it), exits 1 with owner name if someone else holds it. Lighter than `chat-claim.js` — no system message posted. Idempotent for re-claims. Flags: `--task`, `--name`, `--project`
+
 ### chat-catchup.js — Session bootstrap
 ```bash
 node scripts/chat-catchup.js --name mybot --rooms general --budget 50
@@ -161,7 +167,7 @@ Atomically: adds room to agent's DB record, inits read cursor, fires event hook 
 node scripts/chat-leave.js --name mybot --room dev
 node scripts/chat-leave.js --name mybot --room dev --json
 ```
-Atomically: removes room from DB, deletes sentinel file, fires event hook stub. Protected rooms (currently `general`) cannot be left. Flags: `--name`, `--project`, `--room`, `--json`
+Atomically: removes room from DB, deletes sentinel file, fires event hook stub. Protected rooms (`general`, `lobby`) cannot be left. Flags: `--name`, `--project`, `--room`, `--json`
 
 ### chat-watch.js — Background message watcher
 ```bash
@@ -271,6 +277,7 @@ All hooks are in `hooks/`. Registered automatically by `setup.js`.
 | `notify.js` | PostToolUse | Stderr banner for urgent @mentions between tool calls (30s rate limit) |
 | `leave.js` | SessionEnd | Marks agent offline, optionally saves handoff note |
 | `poll-gemini.js` | BeforeAgent | Unread banner for Gemini CLI integration |
+| `empty-project.js` | UserPromptSubmit | Nudges `/summon` in empty projects (no CLAUDE.md). Once per session |
 
 ### Handoff notes
 ```bash
@@ -319,6 +326,7 @@ scripts/
   chat-pin.js        — Pin/unpin messages
   chat-plan.js       — Collaborative planning (create/activate/add-task/show/list/complete)
   chat-claim.js      — Atomic task claiming (claim/complete/release/status)
+  chat-preclaim.js   — Pre-claim enforcement gate (atomic check + claim)
   chat-task-legacy.js — DEPRECATED task messages (use chat-plan.js + chat-claim.js)
   chat-catchup.js    — Session bootstrap
   chat-watch.js      — Background watcher (fs.watch on sentinels, zero tokens idle)
@@ -342,9 +350,10 @@ hooks/
   stop.js        — Stop: block on urgent/@mentions
   notify.js      — PostToolUse: mid-task alerts
   leave.js       — SessionEnd: offline + handoff
+  empty-project.js — UserPromptSubmit: nudge /summon in empty projects
 
 .claude/skills/
-  ccchat/        — Main chat skill
+  ccchat/        — Main chat skill (+ references/workflow.md for task workflow)
   leavechat/     — Graceful exit skill
   bootstrap/     — Session orientation skill
 ```
@@ -360,6 +369,11 @@ messages (id, type, from_agent, from_project, to_agent, room, content, metadata,
 
 -- Read cursors (per agent, per room)
 read_cursors (agent_name, project_hash, room, last_id)
+
+-- Collaborative plans
+plans (id, title, room, created_by, source_message_id, status, created_at, updated_at)
+plan_tasks (id, plan_id, seq, title, description, verify, status, owner, claimed_at, completed_at, blocked_reason, created_at)
+planner_locks (room, agent_name, claimed_at)
 ```
 
 ### Metadata JSON
@@ -390,6 +404,6 @@ read_cursors (agent_name, project_hash, room, last_id)
 - **Dashboard as interactive client** — POST `/api/send` endpoint enables humans to send messages and reply to threads directly from the browser, with mention parsing and sentinel notifications
 - **DB-authoritative identity** — identity file is a write-once bootstrap artifact; DB is the source of truth. Divergence inserts a deduped system message (24h window) so it's persistent and searchable
 - **Event hook stubs** — no-op `emitEvent()` in join/leave operations. Trigger criteria for real event bus: 3rd stub added, OR sentinel workarounds in 2+ scripts, OR sentinel latency drops below polling baseline
-- **Protected rooms** — `PROTECTED_ROOMS` constant prevents agents from leaving `general`, avoiding accidental isolation
+- **Protected rooms** — `PROTECTED_ROOMS` constant prevents agents from leaving `general` or `lobby`, avoiding accidental isolation
 - **Watcher self-respawn** — `--persist` flag with exponential backoff (500ms base, 30s max, 20-restart ceiling, 60s stability reset) eliminates the manual respawn gap that could cause missed messages
 - **ADR Logger** — auto-captures `[DECISION]` tagged messages to structured records in `docs/decisions.md`. Dual-use (importable + CLI). Warns via system message if rejected alternatives are missing, nudging authors toward complete records
