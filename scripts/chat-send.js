@@ -2,7 +2,7 @@
 // Send a message to a room.
 // Usage: node chat-send.js --name <agent> --project <path> --room <room> --message "<text>" [--to <agent>] [--type message|question]
 
-import { upsertAgent, insertMessage, initCursorIfNew, updateCursor, getMessage, getOnlineAgents, projectHash, closeDb } from '../lib/db.js';
+import { upsertAgent, insertMessage, initCursorIfNew, updateCursor, getMessage, getOnlineAgents, projectHash, closeDb, getAllRooms, PROTECTED_ROOMS } from '../lib/db.js';
 import { resolveIdentity } from '../lib/identity.js';
 import { formatSendConfirm, parseMentions } from '../lib/format.js';
 import { touchSentinel } from '../lib/sentinel.js';
@@ -36,6 +36,13 @@ try {
   const priority = urgent ? 'urgent' : 'normal';
   const metadata = { mentions, priority };
   if (evidence) metadata.evidence = evidence;
+
+  // Validate room exists before sending
+  const knownRooms = new Set([...getAllRooms(), ...PROTECTED_ROOMS]);
+  if (!knownRooms.has(room)) {
+    console.error(`Error: Room '${room}' does not exist. Check the room name and try again.`);
+    process.exit(1);
+  }
 
   upsertAgent({ name: identity.name, projectPath: identity.projectPath, rooms: [room] });
   initCursorIfNew(identity.name, identity.projectPath, room);

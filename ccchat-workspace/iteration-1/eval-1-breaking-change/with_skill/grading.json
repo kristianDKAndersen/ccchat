@@ -1,0 +1,83 @@
+{
+  "run_id": "eval-1-with_skill",
+  "expectations": [
+    {
+      "text": "Uses chat-send.js or chat-ask.js to send the message",
+      "passed": true,
+      "evidence": "Plan Step 3 uses chat-send.js: 'node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-send.js --message \"[PROPOSAL]...\" --room general'. Plan Step 4 also uses chat-ask.js: 'node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-ask.js --question \"...\" --room general --timeout 120'. Both scripts are correctly used for complementary purposes."
+    },
+    {
+      "text": "Message includes problem statement and invites critique / asks for input rather than just announcing",
+      "passed": true,
+      "evidence": "The message.md contains a structured proposal with: (1) Problem statement: 'The current database layer needs refactoring. This is a breaking change that will affect the API contract.' (2) Three options with trade-offs. (3) Explicit invitation for critique: 'Requesting peer review before proceeding. What are the risks I'm not seeing?' The chat-ask follow-up also asks: 'Please review and challenge it -- what are the risks I'm missing? Which option do you favor and why?'"
+    },
+    {
+      "text": "Targets --room general or an appropriate room",
+      "passed": true,
+      "evidence": "Plan Step 3: '--room general'. Plan explains: 'Posted to general room where all agents can see it.'"
+    },
+    {
+      "text": "Message framing encourages genuine feedback, not just rubber-stamping",
+      "passed": true,
+      "evidence": "Multiple elements encourage genuine feedback: (1) Three distinct options with explicit trade-offs (pros and cons for each). (2) Recommendation includes uncertainty: 'I want to hear whether the blast radius of Option B is actually manageable... or whether Option C's flag overhead is worth the rollback safety.' (3) Direct ask: 'What are the risks I'm not seeing?' (4) Plan explicitly references critical thinking norms: 'the skill's collaboration norms explicitly require constructive skepticism.' The framing avoids presenting a fait accompli."
+    },
+    {
+      "text": "Mentions chat-ask.js for blocking on responses or explains how to get replies",
+      "passed": true,
+      "evidence": "Plan Step 4 explicitly uses chat-ask.js: 'chat-ask blocks and filters replies by parent_id, so we get direct responses to our question. 120-second timeout gives peers time to review and respond.' Also provides an Agent-based alternative for longer waits."
+    }
+  ],
+  "summary": {
+    "passed": 5,
+    "failed": 0,
+    "total": 5,
+    "pass_rate": 1.0
+  },
+  "timing": {
+    "total_tokens": 25255,
+    "duration_ms": 81005,
+    "total_duration_seconds": 81.0
+  },
+  "claims": [
+    {
+      "claim": "This is Step 1 (Propose) of the mandatory 9-step workflow",
+      "type": "process",
+      "verified": true,
+      "evidence": "CLAUDE.md confirms a '9-step BLOCKING task workflow' starting with 'propose (structured)'. The plan correctly identifies this as the proposal step."
+    },
+    {
+      "claim": "A message that just says 'I'm going to refactor the DB layer' is NOT a valid proposal",
+      "type": "process",
+      "verified": true,
+      "evidence": "CLAUDE.md specifies 'propose (structured)' and the plan references workflow requirements for 'problem statement, 2-3 options with trade-offs, and a recommendation.' A bare announcement would not meet this structure."
+    },
+    {
+      "claim": "Do NOT create a plan -- that requires human approval first",
+      "type": "process",
+      "verified": true,
+      "evidence": "CLAUDE.md states 'Two human approval gates' in the workflow. The plan correctly stops after posting and explicitly lists what NOT to do: 'Do NOT create a plan (Step 4) -- that requires human approval of direction first (Step 3).'"
+    },
+    {
+      "claim": "The [PROPOSAL] tag is the correct tag for this message type",
+      "type": "factual",
+      "verified": false,
+      "evidence": "CLAUDE.md does not explicitly define a [PROPOSAL] tag in the schema. It mentions [DECISION] for ADR logging and [BLOCKED] for escalation. The [PROPOSAL] tag appears to be a reasonable convention but is not confirmed in the available docs."
+    }
+  ],
+  "eval_feedback": {
+    "suggestions": [
+      {
+        "reason": "No assertion checks whether the proposal follows the structured format (problem + options + trade-offs + recommendation). The 'structured_message' assertion only checks for 'problem statement and invites critique,' which is a lower bar than the full 9-step workflow requirement. A message with just a problem statement and a question mark would pass."
+      },
+      {
+        "reason": "No assertion checks whether the plan correctly identifies workflow boundaries (i.e., does NOT proceed to plan creation or implementation). The with_skill run explicitly notes what it will NOT do, which demonstrates superior workflow awareness, but no assertion captures this."
+      },
+      {
+        "assertion": "Mentions chat-ask.js for blocking on responses or explains how to get replies",
+        "reason": "This assertion is broad enough that saying 'you can use chat-ask' in passing would satisfy it. Consider requiring the plan to specify timeout, parent_id filtering behavior, or fallback strategy."
+      }
+    ],
+    "overall": "Assertions test the basics well but miss the quality differentiator: structured proposals with explicit trade-offs vs. simple announcements. The with_skill run produced a dramatically richer proposal (3 options, trade-offs, recommendation, workflow compliance table) that no assertion specifically rewards."
+  },
+  "notes": "Excellent output. The proposal in message.md is a textbook structured proposal with three options, explicit trade-offs (+ and - for each), a recommendation with stated uncertainty, and an invitation for genuine critique. The plan correctly maps to the 9-step workflow, references skill guidance, and explicitly states what it will NOT do (no plan creation, no implementation). 5/5 assertions pass."
+}

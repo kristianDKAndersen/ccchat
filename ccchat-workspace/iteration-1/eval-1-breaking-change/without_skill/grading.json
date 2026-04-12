@@ -1,0 +1,70 @@
+{
+  "run_id": "eval-1-without_skill",
+  "expectations": [
+    {
+      "text": "Uses chat-send.js or chat-ask.js to send the message",
+      "passed": true,
+      "evidence": "Plan Step 2 uses chat-ask.js: 'node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-ask.js --name ccchat-improve ... --room general --question \"...\" --timeout 120'. Step 4 also uses chat-send.js as a fallback: 'node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-send.js ... --room general --message \"...\" --urgent'."
+    },
+    {
+      "text": "Message includes problem statement and invites critique / asks for input rather than just announcing",
+      "passed": true,
+      "evidence": "The message.md content includes a problem statement ('I'm planning a breaking refactor of the database layer that will change the API contract') and asks for input: 'What parts of the DB layer do you depend on? Any concerns or constraints I should know about before I proceed?' It also lists specific changes (restructuring queries, changing signatures, schema adjustments)."
+    },
+    {
+      "text": "Targets --room general or an appropriate room",
+      "passed": true,
+      "evidence": "Plan Step 2: '--room general'. Plan explains: 'general which is where cross-cutting announcements belong.'"
+    },
+    {
+      "text": "Message framing encourages genuine feedback, not just rubber-stamping",
+      "passed": true,
+      "evidence": "The message asks specific questions ('What parts of the DB layer do you depend on?') and flags irreversibility ('This is irreversible once merged'). It asks for concerns rather than approval. However, compared to the with_skill run, it does NOT present options with trade-offs -- it's more of an open-ended 'what do you think' rather than a structured proposal with options to critique."
+    },
+    {
+      "text": "Mentions chat-ask.js for blocking on responses or explains how to get replies",
+      "passed": true,
+      "evidence": "Plan Step 2 uses chat-ask.js directly as the primary mechanism: 'chat-ask is the right tool here because it posts a question AND polls for replies (up to 120 seconds). This is a blocking call that waits for responses.' Also explains sentinel-aware fast polling and timeout behavior."
+    }
+  ],
+  "summary": {
+    "passed": 5,
+    "failed": 0,
+    "total": 5,
+    "pass_rate": 1.0
+  },
+  "timing": {
+    "total_tokens": 26448,
+    "duration_ms": 61360,
+    "total_duration_seconds": 61.4
+  },
+  "claims": [
+    {
+      "claim": "chat-ask uses sentinel-aware fast polling (500ms)",
+      "type": "factual",
+      "verified": true,
+      "evidence": "CLAUDE.md confirms: 'chat-ask polls sentinels at 500ms for reply detection.'"
+    },
+    {
+      "claim": "chat-plan.js --create is not appropriate at the proposal/discussion phase",
+      "type": "process",
+      "verified": true,
+      "evidence": "The plan correctly identifies that a plan should come after getting feedback, not before. CLAUDE.md's workflow starts with 'propose' before 'plan'."
+    },
+    {
+      "claim": "The --urgent flag ensures the stop hook blocks agents who have unread urgent messages",
+      "type": "factual",
+      "verified": true,
+      "evidence": "CLAUDE.md confirms: 'Blocks if unread urgent or @mention messages' for the stop hook, and '--urgent priority -- triggers stop hook blocking.'"
+    }
+  ],
+  "eval_feedback": {
+    "suggestions": [
+      {
+        "reason": "The without_skill message is noticeably less structured than the with_skill message (no options, no trade-offs, no recommendation) but passes all the same assertions. This reveals that the 'structured_message' assertion has too low a bar. A discriminating assertion would check for 'presents 2+ options with trade-offs' which the with_skill run does and the without_skill run does not."
+      }
+    ],
+    "overall": "All assertions pass, but the quality gap between the two runs is significant and invisible to the current assertions. The without_skill message is a reasonable 'heads up + please advise' message, while the with_skill message is a structured proposal with options and trade-offs. The assertions cannot distinguish between these quality levels."
+  },
+  "notes": "All 5 assertions pass. The plan is competent -- correctly uses chat-ask.js, targets general room, includes a fallback with --urgent for offline agents, and explains why chat-plan.js is premature. However, the message itself (message.md) is an open-ended question rather than a structured proposal with options. It asks 'what do you depend on?' rather than presenting specific migration strategies to critique. This is functional but less effective at eliciting substantive feedback compared to the with_skill run's structured proposal."
+}

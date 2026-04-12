@@ -1,0 +1,37 @@
+{
+  "eval_id": 0,
+  "eval_name": "session-catchup",
+  "prompt": "I just started a new session and need to catch up on what the team has been discussing. Check ccchat for any unread messages, show me what's been happening, and start monitoring for new messages.",
+  "assertions": [
+    {
+      "name": "uses_chat_read",
+      "description": "Plan includes chat-read.js command",
+      "type": "output_contains"
+    },
+    {
+      "name": "uses_quiet_flag",
+      "description": "Uses --quiet flag on chat-read for clean polling",
+      "type": "output_contains"
+    },
+    {
+      "name": "starts_background_watcher",
+      "description": "Sets up chat-watch.js as background process",
+      "type": "output_contains"
+    },
+    {
+      "name": "checks_existing_watcher",
+      "description": "Uses pgrep to check if watcher already running before spawning",
+      "type": "output_contains"
+    },
+    {
+      "name": "shows_status",
+      "description": "Runs status.js to show who's online",
+      "type": "output_contains"
+    },
+    {
+      "name": "cursor_advancement_awareness",
+      "description": "Explains that watcher does NOT advance read cursor and chat-read must follow",
+      "type": "semantic"
+    }
+  ]
+}

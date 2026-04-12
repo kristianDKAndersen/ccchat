@@ -7,7 +7,7 @@
 //   node setup.js --uninstall                 # remove from project
 //   node setup.js --global --uninstall        # remove globally
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, readdirSync } from 'fs';
 import { join, dirname, basename, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { homedir } from 'os';
@@ -135,6 +135,20 @@ function copyFileWithReplacements(src, dest) {
   writeFileSync(dest, content);
 }
 
+function copyDirWithReplacements(srcDir, destDir) {
+  if (!existsSync(srcDir)) return;
+  ensureDir(destDir);
+  for (const entry of readdirSync(srcDir, { withFileTypes: true })) {
+    const srcPath = join(srcDir, entry.name);
+    const destPath = join(destDir, entry.name);
+    if (entry.isDirectory()) {
+      copyDirWithReplacements(srcPath, destPath);
+    } else {
+      copyFileWithReplacements(srcPath, destPath);
+    }
+  }
+}
+
 function buildCmds(root) {
   return {
     root,
@@ -180,11 +194,15 @@ if (isGlobal) {
     join(CCCHAT_ROOT, '.claude', 'skills', 'ccchat', 'SKILL.md'),
     join(globalClaudeDir, 'skills', 'ccchat', 'SKILL.md')
   );
+  copyDirWithReplacements(
+    join(CCCHAT_ROOT, '.claude', 'skills', 'ccchat', 'references'),
+    join(globalClaudeDir, 'skills', 'ccchat', 'references')
+  );
   const claudeMdPath = join(CCCHAT_ROOT, 'CLAUDE.md');
   if (existsSync(claudeMdPath)) {
     copyFileWithReplacements(claudeMdPath, join(globalClaudeDir, 'skills', 'ccchat', 'INTERNALS.md'));
   }
-  console.log('  + Skill:      ~/.claude/skills/ccchat/ (+ INTERNALS.md)');
+  console.log('  + Skill:      ~/.claude/skills/ccchat/ (+ references/ + INTERNALS.md)');
 
   ensureDir(join(globalClaudeDir, 'skills', 'leavechat'));
   copyFileWithReplacements(
@@ -244,7 +262,11 @@ copyFileWithReplacements(
   join(CCCHAT_ROOT, '.claude', 'skills', 'ccchat', 'SKILL.md'),
   join(claudeDir, 'skills', 'ccchat', 'SKILL.md')
 );
-console.log('  + Skill:      .claude/skills/ccchat/');
+copyDirWithReplacements(
+  join(CCCHAT_ROOT, '.claude', 'skills', 'ccchat', 'references'),
+  join(claudeDir, 'skills', 'ccchat', 'references')
+);
+console.log('  + Skill:      .claude/skills/ccchat/ (+ references/)');
 
 // Identity file
 const identityData = { name: agentName, projectPath: projectDir, rooms: [room] };

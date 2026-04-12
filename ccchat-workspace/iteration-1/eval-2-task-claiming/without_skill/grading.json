@@ -1,0 +1,83 @@
+{
+  "run_id": "eval-2-without_skill",
+  "expectations": [
+    {
+      "text": "Uses chat-claim.js --claim 7 or chat-preclaim.js --task 7",
+      "passed": true,
+      "evidence": "Plan Step 3 uses chat-claim.js: 'node scripts/chat-claim.js --claim <task-id> --name ccchat-improve --project /Users/awesome/dev/devtest/ccchat-improve'. The plan also mentions chat-preclaim.js as an alternative: 'Could also use chat-preclaim.js --task <task-id> --name ccchat-improve which is a lighter-weight claim gate.' Note: the plan uses '<task-id>' placeholder rather than literal '7', explaining the ambiguity between seq and id."
+    },
+    {
+      "text": "Uses chat-claim.js --complete 7 to mark task done",
+      "passed": true,
+      "evidence": "Plan Step 5: 'node scripts/chat-claim.js --complete <task-id> --name ccchat-improve --project /Users/awesome/dev/devtest/ccchat-improve'. Uses placeholder '<task-id>' but the intent and command structure are correct."
+    },
+    {
+      "text": "Flags that 'tests pass' alone is not sufficient evidence -- must show actual output",
+      "passed": false,
+      "evidence": "The plan does NOT flag the evidence gap. Plan Step 5 says only: 'After the user confirms implementation is done and tests pass.' The response says: 'You mentioned you've already implemented the change and tests pass. Marking it complete now.' The workflow_compliance.md does acknowledge the issue in section 2 ('the workflow appears to require peer review of the implementation in the chat system before marking done') and section 3 ('Whether the two-stage review is mandatory before marking a task done') but frames it as uncertainty rather than a clear flag. Critically, section 3 admits: 'Without access to that skill document... I cannot verify' the requirements. The 'execute, then flag' note in section 6 mentions two-stage review but does NOT specifically flag that 'tests pass' without output is insufficient evidence. The closest is a vague mention in section 2 that the workflow 'appears to require peer review' -- this is hedging, not flagging."
+    },
+    {
+      "text": "References the task implementation workflow or its requirements",
+      "passed": true,
+      "evidence": "workflow_compliance.md section 1 quotes the CLAUDE.md's 9-step workflow: 'propose (structured) -> peer review -> approve direction -> plan (no placeholders) -> approve plan -> delegate -> implement & verify -> two-stage implementation review (spec compliance + quality, separate messages) -> escalate if blocked'. Section 2 maps the current task to this workflow. Section 5 references memory/feedback rules."
+    },
+    {
+      "text": "Mentions that spec compliance and quality reviews are needed before task closes",
+      "passed": true,
+      "evidence": "workflow_compliance.md section 2: 'the workflow also specifies a two-stage implementation review (step 8): spec compliance review + quality review, as separate messages.' Section 7 recommends: 'The project's 9-step workflow includes a two-stage implementation review (spec compliance + quality) before tasks are considered fully done. If your team is following that process, you may want to post the implementation for peer review in ccchat before considering this task closed.'"
+    }
+  ],
+  "summary": {
+    "passed": 4,
+    "failed": 1,
+    "total": 5,
+    "pass_rate": 0.80
+  },
+  "timing": {
+    "total_tokens": 30028,
+    "duration_ms": 101636,
+    "total_duration_seconds": 101.6
+  },
+  "claims": [
+    {
+      "claim": "chat-claim.js --claim is the canonical approach because it announces the claim to the room",
+      "type": "process",
+      "verified": true,
+      "evidence": "Plan states chat-claim.js 'posts a system message to the plan's room announcing the claim.' CLAUDE.md does not distinguish which is 'canonical' but the system message behavior is consistent with how the codebase works."
+    },
+    {
+      "claim": "claimTask uses conditional UPDATE (WHERE status = 'pending') to prevent race conditions",
+      "type": "factual",
+      "verified": true,
+      "evidence": "Plan Step 3 states: 'atomically claims the task via claimTask() in db.js, which uses a conditional UPDATE (WHERE status = 'pending').' CLAUDE.md describes 'atomic task claiming' for the plan system."
+    },
+    {
+      "claim": "Without the skill document, workflow compliance cannot be fully verified",
+      "type": "process",
+      "verified": true,
+      "evidence": "workflow_compliance.md section 3 honestly states: 'Without access to that skill document (the task says \"execute without skill guidance\"), I cannot verify: Whether the two-stage review is mandatory before marking a task done, Whether there are additional gates between implement and complete, What the red-flag table contains.' This is a genuine limitation of the without_skill condition."
+    },
+    {
+      "claim": "Claiming a task and marking it complete are reversible operations",
+      "type": "factual",
+      "verified": false,
+      "evidence": "The plan claims tasks can be released (--release), but this cannot be verified from the available output files. Would need to check chat-claim.js source for a --release flag."
+    },
+    {
+      "claim": "Task must be in pending status to be claimed",
+      "type": "factual",
+      "verified": true,
+      "evidence": "Plan states the conditional UPDATE checks 'WHERE status = pending'. This is consistent with the atomic claiming behavior described in CLAUDE.md."
+    }
+  ],
+  "eval_feedback": {
+    "suggestions": [
+      {
+        "assertion": "Flags that 'tests pass' alone is not sufficient evidence -- must show actual output",
+        "reason": "This is the most discriminating assertion in this eval. The without_skill run's hedging ('appears to require,' 'I cannot verify') demonstrates genuinely less certainty compared to the with_skill run's definitive flag ('The 9-step workflow requires showing command output as evidence'). The assertion correctly distinguishes the two runs."
+      }
+    ],
+    "overall": "Assertions are effective for this eval. The evidence_requirement assertion is the key differentiator between with_skill and without_skill, and it correctly identifies the quality gap."
+  },
+  "notes": "4/5 pass. The without_skill run demonstrates solid knowledge of the ccchat system (correct commands, atomic claiming, task ID ambiguity) but falls short on workflow specifics. The key failure is the evidence_requirement assertion: the run hedges on whether 'tests pass' is sufficient, admitting it cannot verify the requirements without the skill document. This is an honest and accurate self-assessment, but it means the run does not clearly flag the evidence gap. The workflow_compliance.md is thorough but notably less certain than the with_skill version. Used more tokens (30k vs 31k) and took significantly longer (102s vs 89s)."
+}

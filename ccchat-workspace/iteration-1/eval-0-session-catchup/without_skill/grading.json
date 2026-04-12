@@ -1,0 +1,77 @@
+{
+  "run_id": "eval-0-without_skill",
+  "expectations": [
+    {
+      "text": "Plan includes chat-read.js command",
+      "passed": true,
+      "evidence": "Plan Step 7 explicitly uses chat-read.js: 'node scripts/chat-read.js --name ccchat-improve --project /Users/awesome/dev/devtest/ccchat-improve --rooms general,lobby --json'. The plan explains this is needed after the watcher fires to consume messages and advance the cursor."
+    },
+    {
+      "text": "Uses --quiet flag on chat-read for clean polling",
+      "passed": false,
+      "evidence": "The chat-read.js invocation in Step 7 uses --json flag but does not include --quiet: 'node scripts/chat-read.js --name ccchat-improve --project ... --rooms general,lobby --json'. No other chat-read invocation in the plan uses --quiet either."
+    },
+    {
+      "text": "Sets up chat-watch.js as background process",
+      "passed": true,
+      "evidence": "Plan Step 6 sets up the watcher: 'node scripts/chat-watch.js --name ccchat-improve --project /Users/awesome/dev/devtest/ccchat-improve --rooms general,lobby --timeout 300 --persist' with explanation 'This is run via run_in_background.'"
+    },
+    {
+      "text": "Uses pgrep to check if watcher already running before spawning",
+      "passed": false,
+      "evidence": "The plan does not include any pgrep check before spawning the watcher. Step 6 directly launches chat-watch.js without checking for an existing instance. The plan mentions no deduplication mechanism."
+    },
+    {
+      "text": "Runs status.js to show who's online",
+      "passed": true,
+      "evidence": "Plan Step 1: 'node scripts/status.js --raw' with explanation 'Before reading messages, see which agents are currently online and what rooms they're in.'"
+    },
+    {
+      "text": "Explains that watcher does NOT advance read cursor and chat-read must follow",
+      "passed": true,
+      "evidence": "Plan Step 7 explicitly states: 'The watcher does NOT advance the read cursor (by design -- it's detection only). After the watcher reports new messages, chat-read is needed to consume them and advance the cursor so the same messages don't re-trigger.'"
+    }
+  ],
+  "summary": {
+    "passed": 4,
+    "failed": 2,
+    "total": 6,
+    "pass_rate": 0.67
+  },
+  "timing": {
+    "total_tokens": 30138,
+    "duration_ms": 76675,
+    "total_duration_seconds": 76.7
+  },
+  "claims": [
+    {
+      "claim": "session-bootstrap.js is the gap detector designed for new sessions",
+      "type": "factual",
+      "verified": true,
+      "evidence": "CLAUDE.md confirms: 'session-bootstrap.js -- Gap detector: CLAUDE.md staleness, session diff ... ccchat unread, open tasks.'"
+    },
+    {
+      "claim": "chat-catchup advances the read cursor atomically",
+      "type": "factual",
+      "verified": true,
+      "evidence": "The plan states this and CLAUDE.md describes chat-catchup.js as 'Bootstrap new agents: unread + handoff notes + recent history' which reads unread messages (cursor advancement is inherent)."
+    },
+    {
+      "claim": "--persist flag enables self-respawn with exponential backoff",
+      "type": "factual",
+      "verified": true,
+      "evidence": "CLAUDE.md confirms: '--persist flag enables self-respawn with exponential backoff (max 20 restarts, resets after 60s stability).'"
+    },
+    {
+      "claim": "Steps 1-5 are sequential (each informs interpretation of the next)",
+      "type": "process",
+      "verified": false,
+      "evidence": "The claim that each step informs the next is debatable. Status (Step 1), bootstrap (Step 2), and catchup (Step 3) are largely independent read operations. The with_skill run correctly identified they can run in parallel."
+    }
+  ],
+  "eval_feedback": {
+    "suggestions": [],
+    "overall": "No additional suggestions beyond those noted in the with_skill grading. Same assertion weaknesses apply."
+  },
+  "notes": "Solid output that covers status, bootstrap, catchup, history, plans, and watcher. Missing the pgrep dedup check (risk of spawning duplicate watchers) and --quiet flag. Used 20% more tokens (30k vs 25k) and took longer (77s vs 63s) than the with_skill run. Added session-bootstrap.js and history steps which are reasonable extras but claimed serial dependency between independent steps."
+}

@@ -1,0 +1,32 @@
+{
+  "eval_id": 2,
+  "eval_name": "task-claiming",
+  "prompt": "There's an active plan in ccchat that I need to work on. Task #7 should be available for me to claim. Claim it, and then once I've implemented the change (I already ran the tests and they pass), mark it as complete.",
+  "assertions": [
+    {
+      "name": "uses_claim_command",
+      "description": "Uses chat-claim.js --claim 7 or chat-preclaim.js --task 7",
+      "type": "output_contains"
+    },
+    {
+      "name": "uses_complete_command",
+      "description": "Uses chat-claim.js --complete 7 to mark task done",
+      "type": "output_contains"
+    },
+    {
+      "name": "evidence_requirement",
+      "description": "Flags that 'tests pass' alone is not sufficient evidence — must show actual output",
+      "type": "semantic"
+    },
+    {
+      "name": "workflow_awareness",
+      "description": "References the task implementation workflow or its requirements",
+      "type": "semantic"
+    },
+    {
+      "name": "review_stages_awareness",
+      "description": "Mentions that spec compliance and quality reviews are needed before task closes",
+      "type": "semantic"
+    }
+  ]
+}

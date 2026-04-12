@@ -1,0 +1,109 @@
+{
+  "skill_name": "ccchat",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "I just started a new session and need to catch up on what the team has been discussing. Check ccchat for any unread messages, show me what's been happening, and start monitoring for new messages.",
+      "expected_output": "Agent reads unread messages via chat-read.js, shows status, starts background watcher. Uses --quiet flag appropriately. Demonstrates the Quick Start flow.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "uses_chat_read",
+          "description": "Plan includes chat-read.js command",
+          "type": "output_contains"
+        },
+        {
+          "name": "uses_quiet_flag",
+          "description": "Uses --quiet flag on chat-read for clean polling",
+          "type": "output_contains"
+        },
+        {
+          "name": "starts_background_watcher",
+          "description": "Sets up chat-watch.js as background process",
+          "type": "output_contains"
+        },
+        {
+          "name": "checks_existing_watcher",
+          "description": "Uses pgrep to check if watcher already running before spawning",
+          "type": "output_contains"
+        },
+        {
+          "name": "shows_status",
+          "description": "Runs status.js to show who's online",
+          "type": "output_contains"
+        },
+        {
+          "name": "cursor_advancement_awareness",
+          "description": "Explains that watcher does NOT advance read cursor and chat-read must follow",
+          "type": "semantic"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "prompt": "I'm about to refactor the database layer in our project — it's a breaking change that will affect the API contract. I want to run this by the other agents before I start. Can you post about it in ccchat and get their input?",
+      "expected_output": "Agent sends a structured message about the breaking change. Should use --room general. Message invites critique with options and trade-offs, not just announces.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "uses_correct_script",
+          "description": "Uses chat-send.js or chat-ask.js to send the message",
+          "type": "output_contains"
+        },
+        {
+          "name": "structured_message",
+          "description": "Message includes problem statement and invites critique rather than just announcing",
+          "type": "semantic"
+        },
+        {
+          "name": "uses_correct_room",
+          "description": "Targets --room general or an appropriate room",
+          "type": "output_contains"
+        },
+        {
+          "name": "invites_debate",
+          "description": "Message framing encourages genuine feedback, not just rubber-stamping",
+          "type": "semantic"
+        },
+        {
+          "name": "considers_blocking",
+          "description": "Mentions chat-ask.js for blocking on responses or explains how to get replies",
+          "type": "semantic"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "There's an active plan in ccchat that I need to work on. Task #7 should be available for me to claim. Claim it, and then once I've implemented the change (I already ran the tests and they pass), mark it as complete.",
+      "expected_output": "Agent uses chat-claim.js to claim and complete. Flags evidence requirement. References workflow and review stages.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "uses_claim_command",
+          "description": "Uses chat-claim.js --claim 7 or chat-preclaim.js --task 7",
+          "type": "output_contains"
+        },
+        {
+          "name": "uses_complete_command",
+          "description": "Uses chat-claim.js --complete 7 to mark task done",
+          "type": "output_contains"
+        },
+        {
+          "name": "evidence_requirement",
+          "description": "Flags that 'tests pass' alone is not sufficient evidence — must show actual output",
+          "type": "semantic"
+        },
+        {
+          "name": "workflow_awareness",
+          "description": "References the task implementation workflow or its requirements",
+          "type": "semantic"
+        },
+        {
+          "name": "review_stages_awareness",
+          "description": "Mentions that spec compliance and quality reviews are needed before task closes",
+          "type": "semantic"
+        }
+      ]
+    }
+  ]
+}

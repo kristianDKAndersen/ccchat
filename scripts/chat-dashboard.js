@@ -10,7 +10,7 @@ import {
   getHistory, getOnlineAgents, getPinnedMessages, searchMessages,
   getThreadMessages, getAllRooms, getMessagesSinceGlobal, getMessageCount,
   upsertAgent, insertMessage, initCursorIfNew, updateCursor, getMaxMessageId,
-  deleteRoom, closeDb
+  deleteRoom, closeDb, PROTECTED_ROOMS
 } from '../lib/db.js';
 import { parseMetadata, parseMentions } from '../lib/format.js';
 import { touchSentinel } from '../lib/sentinel.js';
@@ -193,6 +193,11 @@ const server = createServer(async (req, res) => {
       const room = params.get('room') || 'general';
       const last = parseInt(params.get('last') || '50', 10);
       const beforeId = params.get('before') ? parseInt(params.get('before'), 10) : null;
+      if (room === 'lobby') {
+        // Lobby is ephemeral — no history shown. New messages appear via SSE.
+        jsonResponse(res, { messages: [], has_more: false });
+        return;
+      }
       const { messages, has_more } = getHistory(room, last, beforeId);
       jsonResponse(res, { messages: messages.map(formatMsg), has_more });
       return;
@@ -262,7 +267,7 @@ const server = createServer(async (req, res) => {
       const body = await readBody(req);
       const { room } = JSON.parse(body);
       if (!room) { jsonResponse(res, { error: 'room required' }, 400); return; }
-      if (room === 'general') { jsonResponse(res, { error: 'cannot delete general' }, 400); return; }
+      if (PROTECTED_ROOMS.includes(room)) { jsonResponse(res, { error: `cannot delete protected room ${room}` }, 400); return; }
       try {
         deleteRoom(room);
         jsonResponse(res, { ok: true, deleted: room });

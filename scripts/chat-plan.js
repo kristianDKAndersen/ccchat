@@ -10,8 +10,8 @@
 
 import {
   createPlan, getPlan, listPlans, updatePlanStatus,
-  addPlanTask, getPlanTasks, insertMessage, upsertAgent,
-  initCursorIfNew, updateCursor, closeDb
+  addPlanTask, getPlanTasks, claimTask, insertMessage, upsertAgent,
+  initCursorIfNew, updateCursor, closeDb, claimPlanner, releasePlanner
 } from '../lib/db.js';
 import { resolveIdentity } from '../lib/identity.js';
 
@@ -45,14 +45,36 @@ function postSystemMessage(identity, room, content) {
 }
 
 try {
-  if (hasFlag('create')) {
+  if (hasFlag('claim-planner')) {
+    const room = getFlag('room') || 'general';
+    const identity = resolveIdentity({ name: getFlag('name'), project: getFlag('project') });
+    const result = claimPlanner(room, identity.name);
+    if (result.success) {
+      out({ ok: true, room, agent: identity.name, _text: `Planner role claimed for #${room} by ${identity.name}` });
+    } else {
+      console.error(`Planner role for room '${room}' already held by ${result.claimant}. Try again in 15 minutes or wait for them to start the plan.`);
+      process.exit(1);
+    }
+
+  } else if (hasFlag('create')) {
     const title = getFlag('title');
     const room = getFlag('room') || 'general';
     const source = getFlag('source') ? parseInt(getFlag('source'), 10) : null;
     if (!title) { console.error('--title is required'); process.exit(1); }
 
     const identity = resolveIdentity({ name: getFlag('name'), project: getFlag('project') });
+
+    // Option B safety net: reject if an active or draft plan already exists for this room.
+    // Prevents duplicate plans even if the planner-claim step (Option C) is skipped.
+    const existing = listPlans({ room }).filter(p => p.status === 'draft' || p.status === 'active');
+    if (existing.length > 0) {
+      const p = existing[0];
+      console.error(`Error: Room '${room}' already has an ${p.status} plan: #${p.id} "${p.title}" (by ${p.created_by}). Complete or abandon it before creating a new one.`);
+      process.exit(1);
+    }
+
     const { id } = createPlan({ title, room, createdBy: identity.name, sourceMessageId: source });
+    releasePlanner(room); // Release the planner lock now that the plan exists
     postSystemMessage(identity, room, `${identity.name} created draft plan #${id}: ${title}`);
 
     out({ ok: true, id, title, status: 'draft', _text: `Created draft plan #${id}: ${title}` });
@@ -154,14 +176,44 @@ try {
     out({ ok: true, id: planId, status: 'completed',
       _text: `Completed plan #${planId}: ${plan.title}` });
 
-  } else {
+  } else if (hasFlag('quick')) {
+    const title = getFlag('quick');
+    const room = getFlag('room') || 'general';
+    if (!title) { console.error("--quick requires a title (e.g. --quick 'write doc')"); process.exit(1); }
+
+    const identity = resolveIdentity({ name: getFlag('name'), project: getFlag('project') });
+
+    // Create plan
+    const { id: planId } = createPlan({ title, room, createdBy: identity.name, sourceMessageId: null });
+
+    // Add single task with same title
+    const { id: taskId } = addPlanTask({ planId, title, description: 'Quick-plan task', verify: null });
+
+    // Activate plan
+    updatePlanStatus(planId, 'active');
+
+    // Claim task atomically — first writer wins
+    const claimed = claimTask(taskId, identity.name);
+    if (!claimed) {
+      console.error(`Unexpected: failed to claim task #${taskId} after creation`);
+      process.exit(1);
+    }
+
+    postSystemMessage(identity, room,
+      `${identity.name} quick-plan: created plan #${planId} + claimed task #${taskId}: ${title}`);
+
+    out({ ok: true, planId, taskId, owner: identity.name,
+      _text: `Quick plan #${planId} created. Task #${taskId} claimed by ${identity.name}: ${title}` });
+
+    } else {
     console.error(`Usage:
   chat-plan.js --create --title '<title>' --room <room> --name <agent> [--source <msg-id>]
   chat-plan.js --activate <plan-id> --name <agent>
   chat-plan.js --add-task <plan-id> --title '<title>' [--description '...'] [--verify '...']
   chat-plan.js --show <plan-id>
   chat-plan.js --list [--status active] [--room <room>]
-  chat-plan.js --complete <plan-id> --name <agent>`);
+  chat-plan.js --complete <plan-id> --name <agent>
+  chat-plan.js --quick '<title>' --room <room> --name <agent>`);
     process.exit(1);
   }
 } finally {

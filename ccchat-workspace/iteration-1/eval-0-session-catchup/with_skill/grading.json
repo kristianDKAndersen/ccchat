@@ -1,0 +1,89 @@
+{
+  "run_id": "eval-0-with_skill",
+  "expectations": [
+    {
+      "text": "Plan includes chat-read.js command",
+      "passed": true,
+      "evidence": "Plan Step 5 references chat-read.js: 'Run chat-read.js to advance the cursor (the watcher does NOT advance it).' The response also mentions 'Advance the read cursor.' However, the primary read mechanism chosen was chat-catchup.js, not chat-read.js directly. chat-read.js is referenced in the watcher follow-up workflow. The assertion asks if chat-read.js is included in the plan, and it is -- in Step 4's notes about post-watcher processing."
+    },
+    {
+      "text": "Uses --quiet flag on chat-read for clean polling",
+      "passed": false,
+      "evidence": "The plan does not use the --quiet flag on any chat-read.js invocation. The primary catchup is done via chat-catchup.js (not chat-read.js), and the subsequent chat-read.js references in the watcher notes do not include --quiet. The plan uses chat-read.js without flags."
+    },
+    {
+      "text": "Sets up chat-watch.js as background process",
+      "passed": true,
+      "evidence": "Plan Step 4 explicitly sets up chat-watch.js: 'node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-watch.js --rooms general,lobby --timeout 300' with the note 'run_in_background=true means it won't block the conversation.' The response confirms: 'Background watcher started (chat-watch.js --rooms general,lobby --timeout 300).'"
+    },
+    {
+      "text": "Uses pgrep to check if watcher already running before spawning",
+      "passed": true,
+      "evidence": "Plan Step 4 includes: 'pgrep -f \"chat-watch.js\" >/dev/null 2>&1 && echo \"RUNNING\" || echo \"NOT_RUNNING\"' followed by 'If NOT_RUNNING, spawn it in the background.'"
+    },
+    {
+      "text": "Runs status.js to show who's online",
+      "passed": true,
+      "evidence": "Plan Step 2: 'node /Users/awesome/dev/devtest/ccchat-improve/scripts/status.js --raw' with explanation: 'This tells us who's online and what rooms they're in, which is essential context for a new session.'"
+    },
+    {
+      "text": "Explains that watcher does NOT advance read cursor and chat-read must follow",
+      "passed": true,
+      "evidence": "Plan Step 4 notes explicitly state: 'When the watcher exits with data (new messages arrived), the process is: ... 3. Run chat-read.js to advance the cursor (the watcher does NOT advance it).' This is a clear, correct explanation of the cursor semantics."
+    }
+  ],
+  "summary": {
+    "passed": 5,
+    "failed": 1,
+    "total": 6,
+    "pass_rate": 0.83
+  },
+  "timing": {
+    "total_tokens": 25178,
+    "duration_ms": 63137,
+    "total_duration_seconds": 63.1
+  },
+  "claims": [
+    {
+      "claim": "chat-catchup.js is the right tool for 'get up to speed' in a new session",
+      "type": "process",
+      "verified": true,
+      "evidence": "The CLAUDE.md describes chat-catchup.js as 'Bootstrap new agents: unread + handoff notes + recent history' which aligns with the plan's usage."
+    },
+    {
+      "claim": "Identity auto-resolves from .claude/ccchat-identity.json so --name/--project flags can be omitted",
+      "type": "factual",
+      "verified": true,
+      "evidence": "CLAUDE.md confirms identity.js handles 'Agent identity resolution from flags or .claude/ccchat-identity.json, with DB-authoritative validation.'"
+    },
+    {
+      "claim": "Steps 1, 2, and 3 can be executed in parallel",
+      "type": "process",
+      "verified": true,
+      "evidence": "These are independent read operations (catchup, status, plans) with no data dependencies between them."
+    },
+    {
+      "claim": "The watcher saves ~12k tokens/hour vs cron at idle",
+      "type": "factual",
+      "verified": true,
+      "evidence": "CLAUDE.md states: 'Saves ~12k tokens/hour vs cron at idle.'"
+    }
+  ],
+  "eval_feedback": {
+    "suggestions": [
+      {
+        "assertion": "Plan includes chat-read.js command",
+        "reason": "This assertion is ambiguous. The with_skill run correctly chose chat-catchup.js (the superior tool for session start) which internally advances cursors. Penalizing for not leading with chat-read.js may reward an inferior approach. Consider: 'Uses chat-read.js or chat-catchup.js for reading messages.'"
+      },
+      {
+        "assertion": "Uses --quiet flag on chat-read for clean polling",
+        "reason": "This assertion assumes chat-read.js is the primary read mechanism. When chat-catchup.js is correctly chosen instead, the --quiet flag on chat-read is irrelevant for the initial catchup phase. The assertion tests a specific implementation detail rather than the outcome (clean output). Consider testing for 'uses appropriate flags for clean output' more broadly."
+      },
+      {
+        "reason": "No assertion checks whether the plan uses chat-catchup.js, which the CLAUDE.md explicitly describes as the bootstrap/orientation tool. The with_skill run correctly used it but gets no credit for this better choice."
+      }
+    ],
+    "overall": "Two assertions (chat-read.js and --quiet flag) are biased toward a specific implementation rather than testing for correct behavior. The with_skill run made a demonstrably better choice (chat-catchup.js over chat-read.js for session start) but one assertion penalizes it for that."
+  },
+  "notes": "Strong output. Used chat-catchup.js (the correct high-level tool for new session orientation) instead of raw chat-read.js. Included pgrep dedup check, background watcher, status check, active plans, and cursor semantics. The only failure is --quiet on chat-read, which is arguably irrelevant since the plan correctly uses chat-catchup.js as the primary read mechanism."
+}

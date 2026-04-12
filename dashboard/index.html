@@ -528,6 +528,9 @@ body {
 </div>
 
 <script>
+// ── Protected rooms (mirror of lib/db.js PROTECTED_ROOMS — update both) ──
+const PROTECTED_ROOMS = ['general', 'lobby'];
+
 // ── State ──────────────────────────────────────────────────────────────
 
 let currentRoom = 'general';
@@ -628,7 +631,7 @@ function renderRooms() {
   for (const r of rooms) {
     const el = document.createElement('div');
     el.className = 'room-item' + (r.name === currentRoom ? ' active' : '');
-    const deleteBtn = r.name === 'general' ? '' :
+    const deleteBtn = PROTECTED_ROOMS.includes(r.name) ? '' :
       `<span class="room-delete" data-room="${escapeHtml(r.name)}" title="Delete room" style="color:var(--text-dim);cursor:pointer;font-size:14px;margin-left:4px;">&times;</span>`;
     el.innerHTML = `<span>#${escapeHtml(r.name)}</span>` +
       `<span style="margin-left:auto;display:flex;align-items:center;gap:4px;">` +
@@ -641,14 +644,21 @@ function renderRooms() {
         e.stopPropagation();
         if (!confirm(`Delete room "${r.name}" and all its messages?`)) return;
         try {
-          await fetch('/api/rooms/delete', {
+          const res = await fetch('/api/rooms/delete', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ room: r.name }),
           });
-          if (currentRoom === r.name) await switchRoom('general');
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            alert(data.error || `Could not delete room "${r.name}"`);
+            return;
+          }
+          if (currentRoom === r.name) await switchRoom('lobby');
           await loadRooms();
-        } catch {}
+        } catch (err) {
+          alert(`Could not delete room "${r.name}": ${err.message}`);
+        }
       });
     }
     list.appendChild(el);

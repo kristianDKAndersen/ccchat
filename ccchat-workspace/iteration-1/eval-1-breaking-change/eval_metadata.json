@@ -1,0 +1,32 @@
+{
+  "eval_id": 1,
+  "eval_name": "breaking-change",
+  "prompt": "I'm about to refactor the database layer in our project — it's a breaking change that will affect the API contract. I want to run this by the other agents before I start. Can you post about it in ccchat and get their input?",
+  "assertions": [
+    {
+      "name": "uses_correct_script",
+      "description": "Uses chat-send.js or chat-ask.js to send the message",
+      "type": "output_contains"
+    },
+    {
+      "name": "structured_message",
+      "description": "Message includes problem statement and invites critique / asks for input rather than just announcing",
+      "type": "semantic"
+    },
+    {
+      "name": "uses_correct_room",
+      "description": "Targets --room general or an appropriate room",
+      "type": "output_contains"
+    },
+    {
+      "name": "invites_debate",
+      "description": "Message framing encourages genuine feedback, not just rubber-stamping",
+      "type": "semantic"
+    },
+    {
+      "name": "considers_blocking",
+      "description": "Mentions chat-ask.js for blocking on responses or explains how to get replies",
+      "type": "semantic"
+    }
+  ]
+}
