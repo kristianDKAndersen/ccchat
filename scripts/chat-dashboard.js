@@ -17,12 +17,7 @@ import { touchSentinel } from '../lib/sentinel.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const args = process.argv.slice(2);
-function getFlag(name) {
-  const idx = args.indexOf(`--${name}`);
-  if (idx === -1 || idx + 1 >= args.length) return undefined;
-  return args[idx + 1];
-}
+import { getFlag } from '../lib/args.js';
 
 const PORT = parseInt(getFlag('port') || '3000', 10);
 const HOST = getFlag('host') || 'localhost';
@@ -72,7 +67,6 @@ function formatMsg(m) {
     priority: meta.priority || 'normal',
     task_status: meta.task_status || null,
     evidence: meta.evidence || null,
-    compact: meta.compact || false,
   };
 }
 
@@ -280,11 +274,18 @@ const server = createServer(async (req, res) => {
     // POST /api/send — send a message from the dashboard
     if (path === '/api/send' && req.method === 'POST') {
       const body = await readBody(req);
-      const data = JSON.parse(body);
+      let data;
+      try { data = JSON.parse(body); } catch { jsonResponse(res, { error: 'invalid JSON' }, 400); return; }
       const { message, room: sendRoom, replyTo } = data;
       if (!message) { jsonResponse(res, { error: 'message required' }, 400); return; }
 
       const targetRoom = sendRoom || 'general';
+      const msgType = data.type || 'message';
+      const validMsgTypes = ['message', 'question', 'system', 'task'];
+      if (!validMsgTypes.includes(msgType)) {
+        jsonResponse(res, { error: `invalid type: ${msgType}` }, 400);
+        return;
+      }
       const mentions = parseMentions(message);
       const metadata = { mentions, priority: data.urgent ? 'urgent' : 'normal' };
 
@@ -292,7 +293,7 @@ const server = createServer(async (req, res) => {
       initCursorIfNew(SENDER_NAME, SENDER_PROJECT, targetRoom);
 
       const { id } = insertMessage({
-        type: data.type || 'message',
+        type: msgType,
         fromAgent: SENDER_NAME,
         fromProject: SENDER_PROJECT,
         toAgent: data.to || null,

@@ -2,7 +2,7 @@
 // Stop hook — block if there are unread messages.
 // Reads DB directly, no server needed.
 
-import { upsertAgent, getUnreadCountAllRooms, getUnreadMessages, initCursorIfNew, closeDb } from '../lib/db.js';
+import { upsertAgent, getUnreadCountAllRooms, getUnreadMessages, initCursorIfNew, closeDb, getDb } from '../lib/db.js';
 import { resolveIdentity } from '../lib/identity.js';
 import { parseMetadata } from '../lib/format.js';
 
@@ -47,10 +47,30 @@ async function main() {
       }
     }
 
+    // Block on active discussion: agent posted recently AND there are unread replies
+    let discussionBlock = false;
+    if (!shouldBlock) {
+      const db = getDb();
+      const activeRooms = db.prepare(
+        "SELECT DISTINCT room FROM messages WHERE from_agent = ? AND created_at > datetime('now', '-10 minutes')"
+      ).all(identity.name);
+
+      for (const { room } of activeRooms) {
+        const messages = getUnreadMessages(identity.name, identity.projectPath, room, 10);
+        const othersMessages = messages.filter(m => m.from_agent !== identity.name);
+        if (othersMessages.length > 0) {
+          discussionBlock = true;
+          break;
+        }
+      }
+    }
+
     if (shouldBlock) {
-      lines.unshift('CCCHAT: Needs response — reply via /ccchat, not your terminal');
-      lines.push('  DO NOT reply in your terminal. Use /ccchat to respond.');
+      lines.unshift('CCCHAT: Needs response — you MUST call Skill(skill="ccchat") NOW');
+      lines.push('  ⚠ BLOCKING: Call Skill(skill="ccchat") to read and respond. Do NOT reply in your terminal.');
       console.log(JSON.stringify({ decision: 'block', reason: lines.join('\n') }));
+    } else if (discussionBlock) {
+      console.log(JSON.stringify({ decision: 'block', reason: 'CCCHAT: Active discussion with unread replies — call Skill(skill="ccchat") to continue' }));
     }
     // Regular messages: don't block — the poll hook will show them on next prompt
   }

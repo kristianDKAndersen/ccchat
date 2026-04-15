@@ -6,12 +6,7 @@ import { execSync } from 'child_process';
 import { setAgentOffline, setHandoffNote, releaseAgentTasks, insertMessage, getDb, projectHash, closeDb } from '../lib/db.js';
 import { resolveIdentity } from '../lib/identity.js';
 
-const args = process.argv.slice(2);
-function getFlag(name) {
-  const idx = args.indexOf(`--${name}`);
-  if (idx === -1 || idx + 1 >= args.length) return undefined;
-  return args[idx + 1];
-}
+import { getFlag } from '../lib/args.js';
 
 try {
   const identity = resolveIdentity({ name: getFlag('name'), project: getFlag('project') });
@@ -37,23 +32,11 @@ try {
 
   setAgentOffline(identity.name, identity.projectPath);
 
-  // Mark offline ALL agents for this project_hash — not just the resolved name.
-  // Prevents ghost agents: if a project previously registered under a different name
-  // (e.g., "maestro" then "d-kristian"), stale names would linger as online.
   const d = getDb();
   const hash = projectHash(identity.projectPath);
   try {
-    d.prepare("UPDATE agents SET online = 0, last_seen = datetime('now') WHERE project_hash = ? AND online = 1")
-      .run(hash);
-  } catch {
-    // Best-effort
-  }
-
-  // Also mark offline any other project registrations for this agent name.
-  // An agent may have registered from multiple projects (e.g., via cross-project chat).
-  try {
-    d.prepare("UPDATE agents SET online = 0, last_seen = datetime('now') WHERE name = ? AND online = 1")
-      .run(identity.name);
+    d.prepare("UPDATE agents SET online = 0, last_seen = datetime('now') WHERE name = ? AND project_hash = ? AND online = 1")
+      .run(identity.name, hash);
   } catch {
     // Best-effort
   }

@@ -13,15 +13,10 @@ import { resolveIdentity } from '../lib/identity.js';
 import { sentinelPath, sentinelDir, touchSentinel } from '../lib/sentinel.js';
 import { parseMetadata } from '../lib/format.js';
 
-const args = process.argv.slice(2);
-function getFlag(name) {
-  const idx = args.indexOf(`--${name}`);
-  if (idx === -1 || idx + 1 >= args.length) return undefined;
-  return args[idx + 1];
-}
+import { args, getFlag } from '../lib/args.js';
 
 const identity = resolveIdentity({ name: getFlag('name'), project: getFlag('project') });
-const rooms = (getFlag('rooms') || 'general').split(',').map(r => r.trim());
+const rooms = getFlag('rooms') ? getFlag('rooms').split(',').map(r => r.trim()) : identity.rooms;
 const timeout = parseInt(getFlag('timeout') || '300', 10) * 1000;
 const persist = args.includes('--persist');
 
@@ -31,6 +26,15 @@ const BASE_BACKOFF_MS = 500;
 const MAX_BACKOFF_MS = 30000;
 let restartCount = 0;
 let lastNotifyTime = 0;
+let lastNotifiedMaxId = 0;
+
+function getMaxIdFromResult(result) {
+  let maxId = 0;
+  for (const msgs of Object.values(result.rooms)) {
+    for (const m of msgs) { if (m.id > maxId) maxId = m.id; }
+  }
+  return maxId;
+}
 
 function runWatchCycle() {
   // Register agent and init cursors (read-only — don't force online)
@@ -70,6 +74,7 @@ function runWatchCycle() {
 
   function notifyAndMaybeRespawn(result) {
     cleanup();
+    lastNotifiedMaxId = getMaxIdFromResult(result);
     console.log(JSON.stringify(result, null, 2));
 
     if (!persist) {
@@ -104,8 +109,16 @@ function runWatchCycle() {
 
   function exitOnTimeout() {
     cleanup();
+    if (persist) {
+      // Silent respawn on timeout — keep the watcher alive without emitting a no-op
+      // notification that would wake the agent. Reset restart counter since timeout
+      // means we ran a full cycle without crashing.
+      restartCount = 0;
+      setTimeout(() => runWatchCycle(), 0);
+      return;
+    }
     console.log(JSON.stringify({ rooms: {}, total_unread: 0, listening: rooms }));
-    process.exit(0); // Always exit on timeout, even in persist mode
+    process.exit(0);
   }
 
   // --- Cleanup ---
@@ -125,8 +138,10 @@ function runWatchCycle() {
   // --- Check for already-unread messages before watching ---
   const initial = checkUnread();
   if (initial.total_unread > 0) {
-    notifyAndMaybeRespawn(initial);
-    return;
+    if (getMaxIdFromResult(initial) > lastNotifiedMaxId) {
+      notifyAndMaybeRespawn(initial);
+      return;
+    }
   }
 
   // --- Trigger handler (deduplicated) ---
@@ -136,7 +151,7 @@ function runWatchCycle() {
     checking = true;
     try {
       const result = checkUnread();
-      if (result.total_unread > 0) {
+      if (result.total_unread > 0 && getMaxIdFromResult(result) > lastNotifiedMaxId) {
         notifyAndMaybeRespawn(result);
       }
     } finally {

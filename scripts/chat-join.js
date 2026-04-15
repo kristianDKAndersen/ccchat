@@ -3,14 +3,9 @@
 // Usage: node chat-join.js --name <agent> --project <path> --room <room>
 
 import { joinRoom, getAgentRooms, closeDb } from '../lib/db.js';
-import { resolveIdentity } from '../lib/identity.js';
+import { resolveIdentity, updateIdentityFile } from '../lib/identity.js';
 
-const args = process.argv.slice(2);
-function getFlag(name) {
-  const idx = args.indexOf(`--${name}`);
-  if (idx === -1 || idx + 1 >= args.length) return undefined;
-  return args[idx + 1];
-}
+import { args, getFlag } from '../lib/args.js';
 
 const room = getFlag('room');
 const jsonOut = args.includes('--json');
@@ -26,6 +21,7 @@ try {
   joinRoom(identity.name, identity.projectPath, room);
 
   const rooms = getAgentRooms(identity.name, identity.projectPath);
+  updateIdentityFile(identity.projectPath, { rooms });
 
   if (jsonOut) {
     console.log(JSON.stringify({ ok: true, agent: identity.name, joined: room, rooms }));

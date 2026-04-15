@@ -127,9 +127,9 @@ try {
     } else {
       spawnDashboard();
       if (hasQuestion || hasUrgentOrMention) {
-        lines.push('  DO NOT reply in your terminal. Use /ccchat to respond.');
+        lines.push('  ⚠ BLOCKING: You MUST call Skill(skill="ccchat") NOW to read and respond. Do NOT reply in your terminal.');
       } else {
-        lines.push('  New messages in ccchat — check /ccchat when ready.');
+        lines.push('  → Call Skill(skill="ccchat") to read and respond.');
       }
       console.error(lines.join('\n'));
 

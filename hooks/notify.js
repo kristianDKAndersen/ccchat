@@ -101,8 +101,8 @@ try {
   if (rlChanged) saveRateLimit(rlPath, rateLimit);
 
   if (alerts.length > 0) {
-    alerts.unshift('CCCHAT: Needs response — reply via /ccchat, not your terminal');
-    alerts.push('  DO NOT reply in your terminal. Use /ccchat to respond.');
+    alerts.unshift('CCCHAT: Needs response — you MUST call Skill(skill="ccchat") NOW');
+    alerts.push('  ⚠ BLOCKING: Call Skill(skill="ccchat") to read and respond. Do NOT reply in your terminal.');
     console.error(alerts.join('\n'));
   }
 } catch {

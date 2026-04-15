@@ -15,13 +15,7 @@ import {
 } from '../lib/db.js';
 import { resolveIdentity } from '../lib/identity.js';
 
-const args = process.argv.slice(2);
-function getFlag(name) {
-  const idx = args.indexOf(`--${name}`);
-  if (idx === -1 || idx + 1 >= args.length) return undefined;
-  return args[idx + 1];
-}
-function hasFlag(name) { return args.includes(`--${name}`); }
+import { args, getFlag, hasFlag } from '../lib/args.js';
 
 const jsonOut = args.includes('--json');
 
@@ -182,6 +176,13 @@ try {
     if (!title) { console.error("--quick requires a title (e.g. --quick 'write doc')"); process.exit(1); }
 
     const identity = resolveIdentity({ name: getFlag('name'), project: getFlag('project') });
+
+    const existing = listPlans({ room }).filter(p => p.status === 'draft' || p.status === 'active');
+    if (existing.length > 0) {
+      const p = existing[0];
+      console.error(`Error: Room '${room}' already has an ${p.status} plan: #${p.id} "${p.title}" (by ${p.created_by}). Complete or abandon it before creating a new one.`);
+      process.exit(1);
+    }
 
     // Create plan
     const { id: planId } = createPlan({ title, room, createdBy: identity.name, sourceMessageId: null });

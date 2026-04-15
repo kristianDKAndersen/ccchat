@@ -13,12 +13,7 @@ import {
 } from '../lib/db.js';
 import { resolveIdentity } from '../lib/identity.js';
 
-const args = process.argv.slice(2);
-function getFlag(name) {
-  const idx = args.indexOf(`--${name}`);
-  if (idx === -1 || idx + 1 >= args.length) return undefined;
-  return args[idx + 1];
-}
+import { args, getFlag } from '../lib/args.js';
 
 const jsonOut = args.includes('--json');
 

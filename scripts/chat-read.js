@@ -6,15 +6,10 @@ import { getDb, upsertAgent, getUnreadMessages, getMaxMessageId, updateCursor, i
 import { resolveIdentity } from '../lib/identity.js';
 import { formatMessage, formatRoomHeader, formatNoMessages, parseMetadata } from '../lib/format.js';
 
-const args = process.argv.slice(2);
-function getFlag(name) {
-  const idx = args.indexOf(`--${name}`);
-  if (idx === -1 || idx + 1 >= args.length) return undefined;
-  return args[idx + 1];
-}
+import { args, getFlag } from '../lib/args.js';
 
 const identity = resolveIdentity({ name: getFlag('name'), project: getFlag('project') });
-const rooms = (getFlag('rooms') || 'general').split(',').map(r => r.trim());
+const rooms = getFlag('rooms') ? getFlag('rooms').split(',').map(r => r.trim()) : identity.rooms;
 const limit = parseInt(getFlag('limit') || '50', 10);
 const jsonOut = args.includes('--json');
 const compact = args.includes('--compact');

@@ -7,12 +7,7 @@ import { resolveIdentity } from '../lib/identity.js';
 import { formatMessage, formatSendConfirm, parseMentions } from '../lib/format.js';
 import { touchSentinel, isSentinelFresh } from '../lib/sentinel.js';
 
-const args = process.argv.slice(2);
-function getFlag(name) {
-  const idx = args.indexOf(`--${name}`);
-  if (idx === -1 || idx + 1 >= args.length) return undefined;
-  return args[idx + 1];
-}
+import { args, getFlag } from '../lib/args.js';
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));

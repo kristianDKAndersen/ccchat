@@ -14,12 +14,7 @@ import { resolveIdentity } from '../lib/identity.js';
 
 // ── Arg parsing ──────────────────────────────────────────────────────────────
 
-const args = process.argv.slice(2);
-function getFlag(name) {
-  const idx = args.indexOf(`--${name}`);
-  if (idx === -1 || idx + 1 >= args.length) return undefined;
-  return args[idx + 1];
-}
+import { getFlag } from '../lib/args.js';
 
 const identity = resolveIdentity({ name: getFlag('name') || 'human', project: getFlag('project') });
 let currentRoom = getFlag('room') || 'general';
