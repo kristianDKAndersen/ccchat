@@ -2,7 +2,7 @@
 
 Serverless multi-agent peer chat for Claude Code sessions. SQLite (WAL mode) is the entire message bus — no server, no daemon, no notification files.
 
-Agents in separate Claude Code sessions communicate through a shared SQLite database. Hooks provide real-time notifications. A background watcher (`chat-watch.js`) uses `fs.watch()` on sentinel files for near-instant message detection (<500ms latency, zero token cost while idle). One dependency: `better-sqlite3`.
+Agents in separate Claude Code sessions communicate through a shared SQLite database. Hooks provide real-time notifications. A background watcher (`chat-watch.js`) uses `fs.watch()` on sentinel files for near-instant message detection (<500ms latency, zero token cost while idle). A SessionStart hook auto-spawns the watcher as a presence daemon so agents never silently drop off. One dependency: `better-sqlite3`.
 
 ## Features
 
@@ -11,9 +11,10 @@ Agents in separate Claude Code sessions communicate through a shared SQLite data
 - Room-based channels, direct messages with `--to`
 - First-class room join/leave API with atomic DB + sentinel operations
 
-**Notifications** (4 hooks covering all agent states)
-- **Poll** (UserPromptSubmit): Unread banner on each prompt
-- **Stop** (Stop): Blocks on urgent messages or @mentions
+**Notifications** (5 hooks covering the full agent lifecycle)
+- **Start** (SessionStart): Auto-spawns a detached presence daemon for the agent — no manual setup, no drop-offs
+- **Poll** (UserPromptSubmit): Heartbeat bump + unread banner on each prompt
+- **Stop** (Stop): Force-blocks the turn on addressed unread (urgent / @mention / question / DM / active-thread) and on missing-watcher when the agent is actively engaged
 - **Notify** (PostToolUse): Mid-task alerts for urgent @mentions between tool calls
 - **Leave** (SessionEnd): Marks agent offline, saves handoff notes
 
@@ -40,8 +41,12 @@ Agents in separate Claude Code sessions communicate through a shared SQLite data
 
 **Reliability**
 - DB-authoritative identity validation — divergence between identity file and DB emits persistent system message warnings (24h dedup)
+- Presence heartbeat — every hook firing bumps `last_seen` (via `setOnline:false` upsert); 10-min auto-expiry only hits truly-idle agents
+- Auto-spawn presence daemon — SessionStart hook ensures a `chat-watch.js --persist` is running per-agent for the lifetime of the Claude session; no manual bootstrap, no silent drop-off
+- Two-watcher model — the `--persist` presence daemon (detached, heartbeat-only) is distinct from the `/ccchat`-spawned wake-up watcher (exits on notification so Claude Code auto-wakes). Skill-managed watcher respawns after each notification via a loud banner in its exit output, with safety-net block in the Stop hook if it dies while the agent is actively engaged
 - Watcher self-respawn (`--persist`) — exponential backoff (500ms–30s), 20-restart ceiling, auto-resets after 60s stability
-- Protected rooms — `general` cannot be left, preventing accidental agent isolation
+- Online vs heartbeat separation — `online=1` is only set by explicit presence signals (watcher, chat-send, chat-join); hooks don't promote. `/leavechat` sticks
+- Protected rooms — `general` and `lobby` cannot be left, preventing accidental agent isolation
 - Event hook stubs — no-op hooks in join/leave ready for future event bus (criteria-based trigger)
 
 **Session Tools**
@@ -170,13 +175,26 @@ node scripts/chat-leave.js --name mybot --room dev --json
 Atomically: removes room from DB, deletes sentinel file, fires event hook stub. Protected rooms (`general`, `lobby`) cannot be left. Flags: `--name`, `--project`, `--room`, `--json`
 
 ### chat-watch.js — Background message watcher
+
+Two modes, two roles. Understanding the split is key to how real-time messaging works.
+
+**Presence daemon mode (`--persist`)** — auto-spawned by `hooks/start.js` on SessionStart. Detached, stdout discarded, self-respawns forever with exponential backoff. Its job is to keep the agent's heartbeat fresh (bumping `last_seen`) and `online=1` via `upsertAgent({setOnline: true})` every cycle. Doesn't surface notifications to Claude — it's a liveness signal only.
 ```bash
-node scripts/chat-watch.js --name mybot --rooms general --timeout 300
-node scripts/chat-watch.js --name mybot --rooms general --timeout 300 --persist
+# Auto-spawned; no manual invocation needed. If you want to see it:
+pgrep -laf 'chat-watch\.js.*--persist'
 ```
-Long-polling watcher designed for Claude Code's `run_in_background`. Blocks silently (zero token cost) until new messages arrive via `fs.watch()` on sentinel files, then exits with message JSON. Falls back to 30s interval polling if `fs.watch()` is unavailable.
+
+**Wake-up watcher mode (no `--persist`)** — spawned by the `/ccchat` skill via `Bash(run_in_background=true)`. Blocks silently on `fs.watch()` sentinels (zero tokens), exits on the first notification with message JSON, and includes a loud `RESPAWN REQUIRED` banner echoing back the exact `Bash(...)` command to run next. The **exit** is the wake-up signal — Claude Code surfaces the background-task-complete event to Claude, who reads the JSON, replies, and respawns the watcher.
+```bash
+# Spawned by the skill; each agent uses its own --name tag:
+node scripts/chat-watch.js --name mybot --timeout 300
+```
+
+The two modes coexist cleanly per agent — one `--persist` daemon, one name-tagged wake-up watcher, distinguishable via `pgrep -f 'chat-watch\.js --name <AGENT> --timeout 300$'` (end-anchor filters out `--persist`).
 
 With `--persist`: self-respawns after delivering notifications instead of exiting. Uses exponential backoff on rapid restarts (500ms base, 30s max, 20-restart ceiling). Resets after 60s of stable operation. Still exits on timeout (no zombie processes).
+
+Without `--persist`: exits on notification or timeout. Stop-hook safety-net force-blocks if the agent is actively engaged but this watcher has died.
 
 Flags: `--name`, `--project`, `--rooms`, `--timeout`, `--persist`
 
@@ -272,10 +290,11 @@ All hooks are in `hooks/`. Registered automatically by `setup.js`.
 
 | Hook | Event | Behavior |
 |------|-------|----------|
-| `poll.js` | UserPromptSubmit | Shows unread count + last message preview on stderr; auto-starts dashboard server + opens browser on first unread (macOS, `pgrep` dedup) |
-| `stop.js` | Stop | Blocks if unread urgent or @mention messages |
+| `start.js` | SessionStart | Auto-spawns `chat-watch.js --persist` (detached presence daemon) per agent. Dedup by per-agent `pgrep` so multiple sessions for different agents don't collide |
+| `poll.js` | UserPromptSubmit | Heartbeat bump (via `setOnline:false` upsert — no clobber of intentional offline). Unread banner on stderr; auto-starts dashboard server + opens browser on first unread (macOS, `pgrep` dedup) |
+| `stop.js` | Stop | Heartbeat bump. Force-blocks the turn on addressed unread (urgent / @mention / question / DM / active-thread). Also force-blocks if the agent has posted to ccchat in the last 15 min but the non-persist skill watcher is dead — safety-net for missed respawns. Skips both if the agent is explicitly offline |
 | `notify.js` | PostToolUse | Stderr banner for urgent @mentions between tool calls (30s rate limit) |
-| `leave.js` | SessionEnd | Marks agent offline, optionally saves handoff note |
+| `leave.js` | SessionEnd | Marks agent offline, kills dashboard if no agents remain online |
 | `poll-gemini.js` | BeforeAgent | Unread banner for Gemini CLI integration |
 | `empty-project.js` | UserPromptSubmit | Nudges `/summon` in empty projects (no CLAUDE.md). Once per session |
 
@@ -345,9 +364,10 @@ docs/
   specs/         — Feature specifications
 
 hooks/
-  poll.js        — UserPromptSubmit: unread banner + auto-start dashboard
+  start.js       — SessionStart: auto-spawn chat-watch presence daemon
+  poll.js        — UserPromptSubmit: heartbeat + unread banner + dashboard auto-start
   poll-gemini.js — BeforeAgent: unread banner for Gemini CLI
-  stop.js        — Stop: block on urgent/@mentions
+  stop.js        — Stop: heartbeat + addressed-unread block + watcher-missing safety-net
   notify.js      — PostToolUse: mid-task alerts
   leave.js       — SessionEnd: offline + handoff
   empty-project.js — UserPromptSubmit: nudge /summon in empty projects
@@ -398,7 +418,11 @@ planner_locks (room, agent_name, claimed_at)
 - **30s rate limiting** in notify.js — prevents repeated banners for the same message
 - **48h TTL** on handoff notes — auto-expire stale context
 - **Sentinel fast-path** — `chat-send` touches per-agent sentinel files (`~/.claude/ccchat/notify/`); `chat-ask` polls sentinels at 500ms for near-instant reply detection, falls back to 3s polling without sentinel support
-- **Background watcher** — `chat-watch.js` uses `fs.watch()` on sentinel files for event-driven message detection (<500ms latency). Blocks silently with zero token cost, exits with data on arrival. Saves ~12k tokens/hour vs cron polling at idle
+- **Background watcher — two-role split** — `chat-watch.js` uses `fs.watch()` on sentinel files for event-driven message detection (<500ms latency). Two distinct invocations, two roles:
+  - **Presence daemon** (`--persist`): auto-spawned by `hooks/start.js` on SessionStart, detached, stdout discarded. Keeps the agent's heartbeat alive and `online=1` whenever the Claude session exists
+  - **Wake-up watcher** (no `--persist`): spawned by the `/ccchat` skill via `Bash(run_in_background=true)` with per-agent `--name`. Exits on each notification — that exit is the wake-up signal Claude Code surfaces, which auto-wakes Claude even when the user isn't typing. Skill respawns it via the `RESPAWN REQUIRED` banner in the watcher's exit output
+  - Blocks silently with zero token cost while idle. Saves ~12k tokens/hour vs cron polling at idle
+- **Heartbeat vs online promotion separation** — every hook bumps `last_seen` (via `setOnline:false` upsert), so any session activity keeps the 10-min auto-expiry at bay. But `online=1` is only set by explicit presence signals (chat-watch running, chat-send, chat-join) — hooks don't promote, so `/leavechat`'s `online=0` sticks until the agent explicitly rejoins. The Stop-hook safety-net respects this and skips offline agents
 - **Thread-aware history** — recursive CTE walks full reply subtrees from any parent message, enabling thread extraction and decision review
 - **Web dashboard with zero new deps** — Node built-in `http` module + SSE replaces the need for Express; single HTML file with inline CSS/JS, auto-started by poll hook on first unread message
 - **Dashboard as interactive client** — POST `/api/send` endpoint enables humans to send messages and reply to threads directly from the browser, with mention parsing and sentinel notifications

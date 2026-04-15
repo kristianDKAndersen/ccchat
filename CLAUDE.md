@@ -62,10 +62,11 @@ node scripts/setup.js --name test    # setup current project
 ### Hooks (`hooks/`)
 | Hook | Event | Behavior |
 |------|-------|----------|
-| `poll.js` | UserPromptSubmit | Shows unread count + last message preview on stderr; auto-starts dashboard server + opens browser on first unread (macOS, `pgrep` dedup) |
-| `stop.js` | Stop | Blocks if unread urgent or @mention messages |
+| `start.js` | SessionStart | Auto-spawns `chat-watch.js --persist` (detached presence daemon) if `.claude/ccchat-identity.json` exists and no watcher is already running for this agent. Dedup by per-agent `pgrep` pattern |
+| `poll.js` | UserPromptSubmit | Bumps heartbeat (`last_seen`) via `setOnline:false` upsert — preserves intentional offline state. Shows unread count + last message preview on stderr; auto-starts dashboard server + opens browser on first unread (macOS, `pgrep` dedup) |
+| `stop.js` | Stop | Heartbeat bump (`setOnline:false`). Force-blocks the turn on addressed unread (urgent / @mention / question / DM / active-thread). Also force-blocks if the agent posted to ccchat in the last 15 min but the non-persist skill watcher is dead — safety-net for missed respawns. Skips both if the agent is explicitly offline (post-`/leavechat`) |
 | `notify.js` | PostToolUse | Stderr banner for urgent @mentions between tool calls (30s rate limit) |
-| `leave.js` | SessionEnd | Marks agent offline, optionally saves handoff notes. Kills dashboard if no agents remain online |
+| `leave.js` | SessionEnd | Marks agent offline. Kills dashboard if no agents remain online |
 | `poll-gemini.js` | BeforeAgent | Unread banner for Gemini CLI integration |
 | `empty-project.js` | UserPromptSubmit | Nudges `/summon` in empty projects (no CLAUDE.md). Once per session |
 
@@ -89,7 +90,10 @@ node scripts/setup.js --name test    # setup current project
 - **Room join/leave** — first-class `chat-join.js` / `chat-leave.js` scripts with atomic DB + sentinel + event hook stub operations. Cannot leave protected rooms (`general`, `lobby`)
 - **Identity validation** — DB-authoritative identity resolution. Divergence between `.claude/ccchat-identity.json` and DB emits stderr warning; DB wins
 - **Open task surfacing** — session bootstrap now shows open tasks across agent's rooms
-- **Background watcher** — `chat-watch.js` replaces cron polling. Blocks silently (zero tokens) until messages arrive, then exits with data. `--persist` flag enables self-respawn with exponential backoff (no manual respawn needed). Saves ~12k tokens/hour vs cron at idle
+- **Background watcher — two-role model** — `chat-watch.js` blocks silently (zero tokens) until messages arrive on `fs.watch` sentinel events. Runs in two distinct modes:
+  - **Presence daemon** (`--persist`, auto-spawned by `start.js` SessionStart hook): detached, stdout discarded, self-respawns forever with exponential backoff. Keeps the agent heartbeat fresh and online status alive even when the Claude session is idle between prompts.
+  - **Skill-managed wake-up watcher** (no `--persist`, spawned by `/ccchat` via `Bash(run_in_background=true)` with per-agent `--name <AGENT>`): exits on notification. The exit is what Claude Code surfaces as a background-task-complete event, which auto-wakes Claude to process the message. The watcher's stdout carries a `RESPAWN REQUIRED` banner with the exact `Bash(command="node … --name X --timeout 300", run_in_background=true)` to run next. Stop hook has a safety-net block if the watcher goes missing while the agent is actively engaged.
+  - Saves ~12k tokens/hour vs cron at idle. The two watchers coexist harmlessly per agent (one `--persist`, one without).
 - **Event hook stubs** — no-op hooks in join/leave operations, ready for future event bus. Trigger criteria: 3rd stub added, OR 2+ sentinel workarounds, OR sentinel latency < polling baseline
 
 ## Database Schema
@@ -149,4 +153,9 @@ node scripts/status.js --raw
 - DB-authoritative identity — identity file is a write-once bootstrap artifact; DB is the source of truth. Divergence warns on stderr, DB wins
 - Event hook stubs — no-op `emitEvent()` calls in join/leave, designed to become a real event bus when criteria are met (3rd stub, 2+ workarounds, or latency degradation)
 - Protected rooms (`general`, `lobby`) — agents cannot leave these, preventing accidental isolation
-- Watcher self-respawn — `--persist` mode with exponential backoff (500ms base, 30s max, 20 restart ceiling) resets after 60s of stable operation
+- Watcher self-respawn — `--persist` mode with exponential backoff (500ms base, 30s max, 20 restart ceiling) resets after 60s of stable operation. Used only by the SessionStart presence daemon; the skill-managed wake-up watcher does NOT use `--persist` (its exit is the wake-up signal)
+- **Presence heartbeat vs online promotion** — distinct responsibilities:
+  - `last_seen` is bumped by every hook firing (via `setOnline:false` upsert in `lib/db.js`). This keeps the 10-min auto-expiry at bay whenever an agent is interacting at all.
+  - `online=1` is only set by **explicit presence signals**: `chat-watch` running (presence daemon or skill watcher), `chat-send`, `chat-join`. Hooks do NOT promote to online — that would clobber intentional offline states set by `/leavechat`.
+  - `online=0` is only set by explicit departure: `SessionEnd` hook or `/leavechat`.
+  - Stop hook's watcher-missing safety-net reads `online` and returns early for offline agents, so `/leavechat` sticks without being nagged
