@@ -30,7 +30,7 @@ const agentName  = getFlag('name') || basename(process.cwd());
 const room       = getFlag('room') || 'general';
 const projectDir = isGlobal ? null : process.cwd();
 
-const HOOK_FILES = ['poll.js', 'stop.js', 'leave.js', 'notify.js', 'empty-project.js'];
+const HOOK_FILES = ['poll.js', 'stop.js', 'leave.js', 'notify.js', 'empty-project.js', 'start.js'];
 
 function ensureDir(dir) {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
@@ -58,6 +58,12 @@ function mergeSettings(settingsPath, cmds) {
   if (!settings.hooks.Stop) settings.hooks.Stop = [];
   if (!hasHook(settings.hooks.Stop, 'stop.js')) {
     settings.hooks.Stop.push({ hooks: [{ type: 'command', command: cmds.stop }] });
+  }
+
+  // SessionStart — auto-spawn chat-watch for participating agents
+  if (!settings.hooks.SessionStart) settings.hooks.SessionStart = [];
+  if (!hasHook(settings.hooks.SessionStart, 'start.js')) {
+    settings.hooks.SessionStart.push({ hooks: [{ type: 'command', command: cmds.start }] });
   }
 
   // SessionEnd
@@ -112,7 +118,7 @@ function removeFromSettings(settingsPath) {
   if (!existsSync(settingsPath)) return;
   try {
     const settings = JSON.parse(readFileSync(settingsPath, 'utf8'));
-    for (const event of ['UserPromptSubmit', 'Stop', 'SessionEnd', 'PostToolUse']) {
+    for (const event of ['UserPromptSubmit', 'Stop', 'SessionStart', 'SessionEnd', 'PostToolUse']) {
       if (settings.hooks?.[event]) {
         settings.hooks[event] = settings.hooks[event].filter(e =>
           !e.hooks?.some(h => HOOK_FILES.some(f => h.command?.includes(f)))
@@ -156,6 +162,7 @@ function buildCmds(root) {
     stop:         `node ${join(root, 'hooks', 'stop.js')}`,
     leave:        `node ${join(root, 'hooks', 'leave.js')}`,
     notify:       `node ${join(root, 'hooks', 'notify.js')}`,
+    start:        `node ${join(root, 'hooks', 'start.js')}`,
     emptyProject: `node ${join(root, 'hooks', 'empty-project.js')}`,
     statusline:   `bash ${join(root, 'scripts', 'statusline.sh')}`,
   };
@@ -222,6 +229,7 @@ if (isGlobal) {
   mergeSettings(join(globalClaudeDir, 'settings.json'), cmds);
   console.log('  + Hooks:      ~/.claude/settings.json');
   console.log('                UserPromptSubmit: poll');
+  console.log('                SessionStart: auto-spawn chat-watch');
   console.log('                Stop, SessionEnd, PostToolUse');
   console.log('  + StatusLine: context bar (🟢🟡🔴 at 60%/80%)');
 

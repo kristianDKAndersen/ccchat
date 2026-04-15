@@ -91,6 +91,11 @@ function logDropoff(identity, counts, hasQuestion, hasMention) {
 try {
   const identity = resolveIdentity();
 
+  // UserPromptSubmit bumps last_seen via the setOnline:false path so hook
+  // activity keeps the heartbeat fresh. DO NOT promote to online=1: that would
+  // override /leavechat's intentional offline state. The SessionStart hook
+  // (start.js) already spawns chat-watch with setOnline:true, which handles
+  // recovery for cascade-killed agents on new sessions.
   upsertAgent({ name: identity.name, projectPath: identity.projectPath, rooms: identity.rooms, setOnline: false });
   for (const room of identity.rooms) {
     initCursorIfNew(identity.name, identity.projectPath, room);

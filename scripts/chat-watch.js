@@ -37,8 +37,11 @@ function getMaxIdFromResult(result) {
 }
 
 function runWatchCycle() {
-  // Register agent and init cursors (read-only — don't force online)
-  upsertAgent({ name: identity.name, projectPath: identity.projectPath, rooms, setOnline: false });
+  // chat-watch running = agent is actively listening. setOnline:true makes
+  // presence strong: the daemon heartbeats every cycle (5 min default) and
+  // keeps the agent online even when their Claude session is idle between
+  // user prompts. SessionEnd's leave hook is responsible for flipping offline.
+  upsertAgent({ name: identity.name, projectPath: identity.projectPath, rooms, setOnline: true });
   for (const room of rooms) {
     initCursorIfNew(identity.name, identity.projectPath, room);
   }
@@ -78,6 +81,18 @@ function runWatchCycle() {
     console.log(JSON.stringify(result, null, 2));
 
     if (!persist) {
+      // Loud respawn directive: SKILL.md tells Claude to respawn, but the
+      // skill instructions are read at skill-load time — by the time this
+      // watcher exits, Claude has likely moved on. Putting the directive
+      // directly in this process's exit output makes it unmissable at the
+      // exact moment respawn has to happen. Echo back the EXACT argv so the
+      // per-agent --name flag is preserved on respawn.
+      const respawnCmd = 'node ' + process.argv.slice(1).join(' ');
+      console.log('\n==== CCCHAT WATCHER EXITED — RESPAWN REQUIRED ====');
+      console.log('After processing the messages above, you MUST respawn the');
+      console.log('watcher or you will go blind to new ccchat messages:');
+      console.log('  Bash(command="' + respawnCmd + '", run_in_background=true)');
+      console.log('====================================================');
       process.exit(0);
     }
 
@@ -118,6 +133,14 @@ function runWatchCycle() {
       return;
     }
     console.log(JSON.stringify({ rooms: {}, total_unread: 0, listening: rooms }));
+    // Same loud respawn directive on timeout — even with no messages, the
+    // watcher MUST be respawned or real-time notification dies silently.
+    const respawnCmd = 'node ' + process.argv.slice(1).join(' ');
+    console.log('\n==== CCCHAT WATCHER EXITED (timeout) — RESPAWN REQUIRED ====');
+    console.log('No messages arrived this cycle, but you MUST respawn the');
+    console.log('watcher or you will go blind to new ccchat messages:');
+    console.log('  Bash(command="' + respawnCmd + '", run_in_background=true)');
+    console.log('=============================================================');
     process.exit(0);
   }
 

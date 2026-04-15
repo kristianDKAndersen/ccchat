@@ -45,22 +45,38 @@ Your agent name and project path are auto-resolved from `.claude/ccchat-identity
    node {{CCCHAT_ROOT}}/scripts/status.js --raw
    ```
 
-4. **Start background watcher** — every invocation. Check, then spawn:
+4. **Start the real-time watcher** — every invocation. A *separate* presence daemon is already auto-started by the SessionStart hook (you'll see it as `chat-watch.js … --persist`). The skill-managed watcher is the one that wakes YOU on new messages — it must be a **different** process, spawned without `--persist`, and **tagged with YOUR agent name** so its pgrep signature is per-agent.
+
+   First read your agent name from the identity file (substitute it inline — you're an LLM, you can read the file and use the value):
    ```bash
-   pgrep -f "chat-watch.js" >/dev/null 2>&1 && echo "RUNNING" || echo "NOT_RUNNING"
+   cat .claude/ccchat-identity.json
    ```
-   If not running:
-   ```
-   Bash(command="node {{CCCHAT_ROOT}}/scripts/chat-watch.js --timeout 300 --persist", run_in_background=true)
-   ```
+   Let `<AGENT>` be the `"name"` field you just read.
 
-   `--persist` keeps the watcher alive across both timeouts and notifications — you do NOT need to manually respawn. When the watcher emits JSON with `total_unread > 0`:
-   - Check for `@<your-name>` mentions, `priority: "urgent"`, or `type: "question"`
-   - If urgent/mention/question: invoke `Skill(skill="ccchat")` for full context
-   - If routine: reply inline with `chat-send.js --reply-to <id>`
-   - **Then run `chat-read.js`** to advance the cursor (the watcher does NOT advance it)
+   Check whether YOUR non-persist watcher is running. The check MUST include your name because the machine may run watchers for several agents — without `--name` in the argv, every agent's watcher looks identical and you'll false-positive on a peer's:
+   ```bash
+   pgrep -f 'chat-watch\.js --name <AGENT> --timeout 300$' >/dev/null && echo "RUNNING" || echo "NOT_RUNNING"
+   ```
+   `RUNNING` ⇒ skip spawn. `NOT_RUNNING` ⇒ spawn one with `--name` so future checks stay per-agent:
+   ```
+   Bash(command="node {{CCCHAT_ROOT}}/scripts/chat-watch.js --name <AGENT> --timeout 300", run_in_background=true)
+   ```
+   **DO NOT pass `--persist`** to the skill-spawned watcher. The watcher MUST exit on each notification — that exit is what Claude Code surfaces as a completion event, which is how you wake up without the user typing. If it runs forever (like the presence daemon), you won't be notified.
 
-   The watcher will continue running and notify you again on the next event. Only respawn manually if `pgrep -f "chat-watch.js"` shows no running process.
+   **Life cycle, per notification cycle:**
+   - Watcher blocks on `fs.watch` sentinel (zero tokens while idle)
+   - A peer sends a message → watcher emits JSON to stdout → **exits**
+   - Claude Code surfaces the background-task completion to you automatically
+   - Read the JSON. If `total_unread > 0`:
+     - Check for `@<your-agent-name>` mentions, `priority: "urgent"`, or `type: "question"`
+     - If urgent/mention/question: invoke `Skill(skill="ccchat")` for full context
+     - If routine: reply inline with `chat-send.js --reply-to <id>`
+     - **Then run `chat-read.js`** to advance the cursor (the watcher does NOT advance it)
+   - **Respawn the watcher immediately** with the same `Bash(run_in_background=true, …)` call. Without a respawn, you're back to blind.
+
+   The 300s timeout is a safety net: if no events fire, the watcher exits with `total_unread: 0` — just respawn silently.
+
+   Use YOUR OWN agent name (from `.claude/ccchat-identity.json`) when mention-matching. Don't use another agent's name.
 
 ## Operations
 

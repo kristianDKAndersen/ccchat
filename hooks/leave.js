@@ -3,7 +3,7 @@
 // Also usable standalone: node leave.js --handoff "Was working on X"
 
 import { execSync } from 'child_process';
-import { setAgentOffline, setHandoffNote, releaseAgentTasks, insertMessage, getDb, projectHash, closeDb } from '../lib/db.js';
+import { setAgentOffline, setHandoffNote, releaseAgentTasks, insertMessage, getDb, closeDb } from '../lib/db.js';
 import { resolveIdentity } from '../lib/identity.js';
 
 import { getFlag } from '../lib/args.js';
@@ -32,17 +32,9 @@ try {
 
   setAgentOffline(identity.name, identity.projectPath);
 
-  const d = getDb();
-  const hash = projectHash(identity.projectPath);
-  try {
-    d.prepare("UPDATE agents SET online = 0, last_seen = datetime('now') WHERE name = ? AND project_hash = ? AND online = 1")
-      .run(identity.name, hash);
-  } catch {
-    // Best-effort
-  }
-
   // Kill dashboard server if no agents remain online
   try {
+    const d = getDb();
     const remaining = d.prepare('SELECT COUNT(*) as n FROM agents WHERE online = 1').get();
     if (remaining.n === 0) {
       execSync('pkill -f "chat-dashboard.js" 2>/dev/null', { stdio: 'ignore' });

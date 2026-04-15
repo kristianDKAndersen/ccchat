@@ -41,7 +41,7 @@ try {
   if (!agent) { closeDb(); process.exit(0); }
 
   let rooms;
-  try { rooms = JSON.parse(agent.rooms); } catch { rooms = ['general']; }
+  try { rooms = JSON.parse(agent.rooms); } catch { rooms = ['lobby']; }
 
   const cursorStmt = d.prepare('SELECT last_id FROM read_cursors WHERE agent_name = ? AND project_hash = ? AND room = ?');
   const msgStmt = d.prepare(`
