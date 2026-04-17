@@ -9,7 +9,7 @@
 import {
   getPlanTask, getPlan, getPlanTasks, claimTask, completeTask,
   releaseTask, insertMessage, upsertAgent, initCursorIfNew,
-  updateCursor, closeDb
+  updateCursor, closeDb, checkPhaseAllowed
 } from '../lib/db.js';
 import { resolveIdentity } from '../lib/identity.js';
 
@@ -44,6 +44,13 @@ try {
     if (!task) { console.error(`Task #${taskId} not found`); process.exit(1); }
 
     const plan = getPlan(task.plan_id);
+
+    const phaseCheck = checkPhaseAllowed(plan.room, 'task:claim');
+    if (!phaseCheck.allowed) {
+      console.error(`Error: Cannot claim tasks in phase '${phaseCheck.current}'. Task claiming requires execute phase.`);
+      process.exit(1);
+    }
+
     const success = claimTask(taskId, identity.name);
 
     if (success) {

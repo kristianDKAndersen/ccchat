@@ -5,9 +5,12 @@
 import { getDb, projectHash, getMaxMessageId, closeDb } from '../lib/db.js';
 import { resolveIdentity } from '../lib/identity.js';
 import { parseMetadata } from '../lib/format.js';
-import { readFileSync, writeFileSync, renameSync } from 'fs';
-import { tmpdir } from 'os';
-import { join } from 'path';
+import { readFileSync, writeFileSync, renameSync, existsSync } from 'fs';
+import { tmpdir, homedir } from 'os';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const SUPPRESS_SECONDS = 30;
 
@@ -105,6 +108,32 @@ try {
     alerts.push('  ⚠ BLOCKING: Call Skill(skill="ccchat") to read and respond. Do NOT reply in your terminal.');
     console.error(alerts.join('\n'));
   }
+
+  // [DECISION] auto-capture: scan recent messages and log any not yet in decisions.md
+  try {
+    const canonicalProject = dirname(__dirname);
+    const decisionsPath = join(canonicalProject, 'docs', 'decisions.md');
+    const loggedIds = new Set();
+    if (existsSync(decisionsPath)) {
+      const content = readFileSync(decisionsPath, 'utf8');
+      for (const m of content.matchAll(/^session_id:\s*(\d+)/gm)) loggedIds.add(m[1]);
+    }
+    const recent = d.prepare(
+      "SELECT * FROM messages WHERE created_at > datetime('now', '-24 hours') AND content LIKE '%[DECISION]%' ORDER BY id ASC LIMIT 20"
+    ).all();
+    if (recent.length > 0) {
+      const { adrLogDecision } = await import(join(__dirname, '..', 'scripts', 'adr-logger.js'));
+      for (const msg of recent) {
+        if (!loggedIds.has(String(msg.id))) {
+          adrLogDecision(
+            { content: msg.content, id: msg.id, created_at: msg.created_at, from_agent: msg.from_agent },
+            canonicalProject,
+            msg.room
+          );
+        }
+      }
+    }
+  } catch { /* ADR auto-capture is best-effort */ }
 } catch {
   // Hook must never fail loudly
 } finally {

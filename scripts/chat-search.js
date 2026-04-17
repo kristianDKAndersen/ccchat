@@ -7,7 +7,8 @@ import { formatMessage, parseMetadata } from '../lib/format.js';
 
 import { args, getFlag } from '../lib/args.js';
 
-const query = getFlag('query');
+const riskOnly = args.includes('--risk');
+const query = getFlag('query') || (riskOnly ? '[RISK' : null);
 const room = getFlag('room') || 'general';
 const limit = parseInt(getFlag('limit') || '20', 10);
 const pinnedOnly = args.includes('--pinned');
@@ -16,13 +17,13 @@ const byAgent = getFlag('by');
 const jsonOut = args.includes('--json');
 
 if (!query) {
-  console.error('Usage: node chat-search.js --query "<text>" [--room general] [--limit 20] [--pinned] [--verified] [--by <agent>] [--json]');
+  console.error('Usage: node chat-search.js --query "<text>" [--room general] [--limit 20] [--pinned] [--verified] [--risk] [--by <agent>] [--json]');
   process.exit(1);
 }
 
 try {
   // Fetch more than limit to account for post-query filtering
-  const fetchLimit = (pinnedOnly || verifiedOnly || byAgent) ? limit * 5 : limit;
+  const fetchLimit = (pinnedOnly || verifiedOnly || riskOnly || byAgent) ? limit * 5 : limit;
   let results = searchMessages(room, query, fetchLimit);
 
   // Apply filters in JS (small result sets, avoids coupling to SQLite JSON functions)
@@ -34,6 +35,9 @@ try {
       const meta = parseMetadata(m.metadata);
       return !!meta.evidence;
     });
+  }
+  if (riskOnly) {
+    results = results.filter(m => m.content.includes('[RISK'));
   }
   if (byAgent) {
     const agent = byAgent.toLowerCase();
@@ -47,6 +51,7 @@ try {
   const filters = [];
   if (pinnedOnly) filters.push('pinned');
   if (verifiedOnly) filters.push('verified');
+  if (riskOnly) filters.push('risk');
   if (byAgent) filters.push(`by:${byAgent}`);
   const filterDesc = filters.length ? ` [${filters.join(', ')}]` : '';
 

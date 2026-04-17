@@ -239,6 +239,10 @@ body {
 .badge-system { background: var(--text-dim); color: var(--bg); }
 .badge-verified { background: var(--green); color: var(--bg); }
 .badge-digest { background: var(--orange); color: var(--bg); }
+.badge-phase-brainstorming { background: var(--cyan); color: var(--bg); }
+.badge-phase-converging { background: var(--yellow); color: var(--bg); }
+.badge-phase-decided { background: var(--green); color: var(--bg); }
+.badge-risk { background: var(--red); color: #fff; }
 
 .msg-reply {
   font-size: 11px;
@@ -577,6 +581,8 @@ function renderMsg(msg, container) {
   if (msg.type === 'system') badges.push('<span class="badge badge-system">system</span>');
   if (msg.evidence) badges.push('<span class="badge badge-verified">verified</span>');
   if (msg.compact) badges.push('<span class="badge badge-digest">digest</span>');
+  if (msg.discussion_phase) badges.push(`<span class="badge badge-phase-${msg.discussion_phase}">${msg.discussion_phase}</span>`);
+  if (msg.content && msg.content.includes('[RISK')) badges.push('<span class="badge badge-risk">RISK</span>');
 
   const reply = msg.parent_id
     ? `<span class="msg-reply" data-thread="${msg.parent_id}">&uarr; reply to #${msg.parent_id}</span>`

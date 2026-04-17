@@ -2,7 +2,7 @@
 // Send a message to a room.
 // Usage: node chat-send.js --name <agent> --project <path> --room <room> --message "<text>" [--to <agent>] [--type message|question]
 
-import { upsertAgent, insertMessage, initCursorIfNew, updateCursor, getMessage, getOnlineAgents, projectHash, closeDb, getAllRooms, PROTECTED_ROOMS } from '../lib/db.js';
+import { upsertAgent, insertMessage, initCursorIfNew, updateCursor, getMessage, getOnlineAgents, projectHash, closeDb, getAllRooms, PROTECTED_ROOMS, checkPhaseAllowed } from '../lib/db.js';
 import { resolveIdentity } from '../lib/identity.js';
 import { formatSendConfirm, parseMentions } from '../lib/format.js';
 import { touchSentinel } from '../lib/sentinel.js';
@@ -20,9 +20,30 @@ const parentId = replyTo ? parseInt(replyTo, 10) : undefined;
 const urgent = args.includes('--urgent');
 const evidence = getFlag('evidence');
 const jsonOut = args.includes('--json');
+const agreeFlag = args.includes('--agree');
+const disagreeFlag = args.includes('--disagree');
+const topicFlag = getFlag('topic');
+const rationaleFlag = getFlag('rationale');
+const discussionPhase = getFlag('discussion-phase');
+const VALID_PHASES = ['brainstorming', 'converging', 'decided'];
+
+if (discussionPhase && !VALID_PHASES.includes(discussionPhase)) {
+  console.error(`Error: --discussion-phase must be one of: ${VALID_PHASES.join(', ')}`);
+  process.exit(1);
+}
 
 if (!message) {
-  console.error('Usage: node chat-send.js --message "<text>" [--name agent] [--project path] [--room room] [--to agent] [--type message|question] [--reply-to <id>] [--urgent]');
+  console.error('Usage: node chat-send.js --message "<text>" [--name agent] [--project path] [--room room] [--to agent] [--type message|question] [--reply-to <id>] [--urgent] [--agree|--disagree --topic <topic> [--rationale <text>]]');
+  process.exit(1);
+}
+
+if (agreeFlag && disagreeFlag) {
+  console.error('Error: --agree and --disagree are mutually exclusive.');
+  process.exit(1);
+}
+
+if (agreeFlag && !rationaleFlag) {
+  console.error('Error: --agree requires --rationale. Every agreement must state what was examined.');
   process.exit(1);
 }
 
@@ -31,6 +52,25 @@ try {
   const priority = urgent ? 'urgent' : 'normal';
   const metadata = { mentions, priority };
   if (evidence) metadata.evidence = evidence;
+  if (agreeFlag) {
+    metadata.consensus_signal = 'agree';
+    if (topicFlag) metadata.topic = topicFlag;
+    metadata.rationale = rationaleFlag;
+  } else if (disagreeFlag) {
+    metadata.consensus_signal = 'disagree';
+    if (topicFlag) metadata.topic = topicFlag;
+    if (rationaleFlag) metadata.rationale = rationaleFlag;
+  }
+  if (discussionPhase) metadata.discussion_phase = discussionPhase;
+
+  if (agreeFlag || disagreeFlag) {
+    const op = agreeFlag ? 'send:agree' : 'send:disagree';
+    const phaseCheck = checkPhaseAllowed(room, op);
+    if (!phaseCheck.allowed) {
+      const signal = agreeFlag ? '/agree' : '/disagree';
+      console.warn(`Warning: ${signal} signals are most meaningful in peer_review or review phase. Current phase: ${phaseCheck.current || 'none'}.`);
+    }
+  }
 
   // Validate room exists before sending
   const knownRooms = new Set([...getAllRooms(), ...PROTECTED_ROOMS]);

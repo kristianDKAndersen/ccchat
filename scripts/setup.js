@@ -97,7 +97,7 @@ function mergeSettings(settingsPath, cmds) {
     'chat-search.js', 'chat-join.js', 'chat-leave.js', 'chat-pin.js',
     'chat-plan.js', 'chat-claim.js', 'chat-task.js', 'chat-catchup.js',
     'chat-watch.js', 'chat-dashboard.js', 'status.js', 'session-bootstrap.js',
-    'setup.js',
+    'chat-digest.js', 'setup.js',
   ].map(s => `Bash(node ${cmds.root}/scripts/${s}:*)`);
   const miscPerms = ['Bash(pgrep -f:*)', 'Bash(pkill -f "chat-watch.js:*)'];
   for (const perm of [...scriptPerms, ...miscPerms]) {
@@ -181,6 +181,7 @@ if (isGlobal) {
     try { rmSync(join(globalClaudeDir, 'skills', 'ccchat'), { recursive: true, force: true }); } catch {}
     try { rmSync(join(globalClaudeDir, 'skills', 'leavechat'), { recursive: true, force: true }); } catch {}
     try { rmSync(join(globalClaudeDir, 'skills', 'bootstrap'), { recursive: true, force: true }); } catch {}
+    try { rmSync(join(globalClaudeDir, 'skills', 'digest'), { recursive: true, force: true }); } catch {}
     console.log('Done. ccchat v2 removed from global config.');
     process.exit(0);
   }
@@ -224,6 +225,13 @@ if (isGlobal) {
     join(globalClaudeDir, 'skills', 'bootstrap', 'SKILL.md')
   );
   console.log('  + Skill:      ~/.claude/skills/bootstrap/');
+
+  ensureDir(join(globalClaudeDir, 'skills', 'digest'));
+  copyFileWithReplacements(
+    join(CCCHAT_ROOT, '.claude', 'skills', 'digest', 'SKILL.md'),
+    join(globalClaudeDir, 'skills', 'digest', 'SKILL.md')
+  );
+  console.log('  + Skill:      ~/.claude/skills/digest/');
 
   // Hooks + statusline
   mergeSettings(join(globalClaudeDir, 'settings.json'), cmds);

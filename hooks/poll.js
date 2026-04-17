@@ -7,7 +7,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { readFileSync, appendFileSync, existsSync } from 'fs';
 import { homedir } from 'os';
-import { upsertAgent, getUnreadCountAllRooms, getUnreadMessages, initCursorIfNew, getDb, projectHash, closeDb } from '../lib/db.js';
+import { upsertAgent, getUnreadCountAllRooms, getUnreadMessages, initCursorIfNew, getDb, projectHash, closeDb, getStaleUnansweredQuestions } from '../lib/db.js';
 import { resolveIdentity } from '../lib/identity.js';
 import { parseMetadata } from '../lib/format.js';
 
@@ -136,6 +136,10 @@ try {
       } else {
         lines.push('  → Call Skill(skill="ccchat") to read and respond.');
       }
+      if (total >= 3) {
+        const firstRoom = [...counts.keys()][0];
+        lines.push(`  → Digest: node ${join(__dirname, '..', 'scripts', 'chat-digest.js')} --room ${firstRoom}`);
+      }
       console.error(lines.join('\n'));
 
       // Drop-off tracking: log when questions/@mentions go unread and agent is idle
@@ -145,6 +149,16 @@ try {
         } catch { /* tracking must never fail the hook */ }
       }
     }
+  }
+  // Open Questions auto-promotion: flag stale unanswered questions
+  const staleQs = [];
+  for (const room of identity.rooms) {
+    const qs = getStaleUnansweredQuestions(room, 15);
+    for (const q of qs) staleQs.push(`  [${room}] #${q.id} ${q.from_agent}: ${q.content.slice(0, 120)}`);
+  }
+  if (staleQs.length > 0) {
+    staleQs.unshift(`CCCHAT OPEN QUESTIONS: ${staleQs.length} unanswered question${staleQs.length !== 1 ? 's' : ''} (>15 min):`);
+    console.error(staleQs.join('\n'));
   }
 } catch {
   // Hook must never fail loudly

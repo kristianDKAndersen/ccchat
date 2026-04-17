@@ -11,7 +11,8 @@
 import {
   createPlan, getPlan, listPlans, updatePlanStatus,
   addPlanTask, getPlanTasks, claimTask, insertMessage, upsertAgent,
-  initCursorIfNew, updateCursor, closeDb, claimPlanner, releasePlanner
+  initCursorIfNew, updateCursor, closeDb, claimPlanner, releasePlanner,
+  checkPhaseAllowed
 } from '../lib/db.js';
 import { resolveIdentity } from '../lib/identity.js';
 
@@ -58,6 +59,12 @@ try {
 
     const identity = resolveIdentity({ name: getFlag('name'), project: getFlag('project') });
 
+    const phaseCheck = checkPhaseAllowed(room, 'plan:create');
+    if (!phaseCheck.allowed) {
+      console.error(`Error: Cannot create plan in phase '${phaseCheck.current}'. Plan creation requires brainstorm or draft phase.`);
+      process.exit(1);
+    }
+
     // Option B safety net: reject if an active or draft plan already exists for this room.
     // Prevents duplicate plans even if the planner-claim step (Option C) is skipped.
     const existing = listPlans({ room }).filter(p => p.status === 'draft' || p.status === 'active');
@@ -78,6 +85,12 @@ try {
     const plan = getPlan(planId);
     if (!plan) { console.error(`Plan #${planId} not found`); process.exit(1); }
     if (plan.status !== 'draft') { console.error(`Plan #${planId} is ${plan.status}, not draft`); process.exit(1); }
+
+    const activatePhaseCheck = checkPhaseAllowed(plan.room, 'plan:activate');
+    if (!activatePhaseCheck.allowed) {
+      console.error(`Error: Cannot activate plan in phase '${activatePhaseCheck.current}'. Plan activation requires draft phase.`);
+      process.exit(1);
+    }
 
     const tasks = getPlanTasks(planId);
     if (tasks.length === 0) { console.error(`Plan #${planId} has no tasks. Add tasks before activating.`); process.exit(1); }
@@ -181,6 +194,12 @@ try {
     if (existing.length > 0) {
       const p = existing[0];
       console.error(`Error: Room '${room}' already has an ${p.status} plan: #${p.id} "${p.title}" (by ${p.created_by}). Complete or abandon it before creating a new one.`);
+      process.exit(1);
+    }
+
+    const quickPhaseCheck = checkPhaseAllowed(room, 'task:claim');
+    if (!quickPhaseCheck.allowed) {
+      console.error(`Error: Cannot use --quick in phase '${quickPhaseCheck.current}'. Use --quick only in execute phase.`);
       process.exit(1);
     }
 

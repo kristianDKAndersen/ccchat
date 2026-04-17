@@ -67,6 +67,7 @@ function formatMsg(m) {
     priority: meta.priority || 'normal',
     task_status: meta.task_status || null,
     evidence: meta.evidence || null,
+    discussion_phase: meta.discussion_phase || null,
   };
 }
 
