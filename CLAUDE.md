@@ -30,13 +30,13 @@ node scripts/setup.js --name test    # setup current project
 - `sentinel.js` — Sentinel file helpers for fast-path message notification (touch, check mtime, cleanup)
 
 ### Scripts (`scripts/`)
-- `chat-send.js` — Send a message (`--reply-to <id>` for threading, `--to` for DMs)
+- `chat-send.js` — Send a message (`--reply-to <id>` for threading, `--to` for DMs, `--agree`/`--disagree` + `--topic` + `--rationale` for consensus signals, `--discussion-phase brainstorming|converging|decided` for phase markers)
 - `chat-join.js` — Join a room (`--room <room>`, atomically updates DB + inits cursor + event hook stub)
 - `chat-leave.js` — Leave a room (`--room <room>`, atomically updates DB + cleans sentinel + event hook stub; cannot leave `general`)
 - `chat-read.js` — Read unread messages (advances read cursor)
 - `chat-ask.js` — Post question, poll for replies (filters by `parent_id`)
 - `chat-history.js` — Paginated history viewer (read-only, no cursor change)
-- `chat-search.js` — Search messages with filters (`--pinned`, `--verified`, `--by <agent>`)
+- `chat-search.js` — Search messages with filters (`--pinned`, `--verified`, `--by <agent>`, `--risk` for `[RISK]`-tagged messages)
 - `chat-pin.js` — Pin/unpin messages, list pinned messages in a room
 - `chat-plan.js` — Collaborative planning: create/activate/add-task/show/list/complete plans
 - `chat-claim.js` — Atomic task claiming: claim/complete/release tasks, show plan status
@@ -50,6 +50,9 @@ node scripts/setup.js --name test    # setup current project
 - `status.js` — Show online agents and rooms (`--raw` for JSON, `--prune` for cleanup)
 - `statusline.sh` — Rich terminal dashboard (agent, project, branch, context bar, model, cost, duration, lines changed, rate limits)
 - `adr-logger.js` — Auto-captures `[DECISION]` tagged messages to `docs/decisions.md`. Dual-use: importable function or CLI (`--message-id <id>`). Sends warning if rejected alternatives are missing
+- `chat-digest.js` — Human-readable digest: ⚡ ACTION NEEDED / ✅ DECISIONS MADE / ❓ OPEN QUESTIONS / ▼ DETAILS. Flags: `--room`, `--since-hours` (default 24), `--json`
+- `chat-consensus.js` — Aggregate consensus signals by topic (counts agree/disagree votes per topic from room history)
+- `chat-phase.js` — Phase state machine CLI. `--set <phase> --by <agent>` sets the current phase (validated enum); `--get` shows current phase; `--log` shows history. Valid phases: `brainstorm`, `draft`, `spec`, `execute`, `peer_review`, `review`, `done`, `hold`, `cancelled`
 - `setup.js` — Install hooks/skills globally or per-project
 
 ### Docs (`docs/`)
@@ -63,9 +66,9 @@ node scripts/setup.js --name test    # setup current project
 | Hook | Event | Behavior |
 |------|-------|----------|
 | `start.js` | SessionStart | Auto-spawns `chat-watch.js --persist` (detached presence daemon) if `.claude/ccchat-identity.json` exists and no watcher is already running for this agent. Dedup by per-agent `pgrep` pattern |
-| `poll.js` | UserPromptSubmit | Bumps heartbeat (`last_seen`) via `setOnline:false` upsert — preserves intentional offline state. Shows unread count + last message preview on stderr; auto-starts dashboard server + opens browser on first unread (macOS, `pgrep` dedup) |
+| `poll.js` | UserPromptSubmit | Bumps heartbeat (`last_seen`) via `setOnline:false` upsert — preserves intentional offline state. Shows unread count + last message preview on stderr; shows stale unanswered Open Questions banner; auto-starts dashboard server + opens browser on first unread (macOS, `pgrep` dedup) |
 | `stop.js` | Stop | Heartbeat bump (`setOnline:false`). Force-blocks the turn on addressed unread (urgent / @mention / question / DM / active-thread). Also force-blocks if the agent posted to ccchat in the last 15 min but the non-persist skill watcher is dead — safety-net for missed respawns. Skips both if the agent is explicitly offline (post-`/leavechat`) |
-| `notify.js` | PostToolUse | Stderr banner for urgent @mentions between tool calls (30s rate limit) |
+| `notify.js` | PostToolUse | Stderr banner for urgent @mentions between tool calls (30s rate limit); scans recent messages for `[DECISION]` tags and auto-triggers ADR logging to `docs/decisions.md` (dedupes by message ID) |
 | `leave.js` | SessionEnd | Marks agent offline. Kills dashboard if no agents remain online |
 | `poll-gemini.js` | BeforeAgent | Unread banner for Gemini CLI integration |
 | `empty-project.js` | UserPromptSubmit | Nudges `/summon` in empty projects (no CLAUDE.md). Once per session |
@@ -95,6 +98,14 @@ node scripts/setup.js --name test    # setup current project
   - **Skill-managed wake-up watcher** (no `--persist`, spawned by `/ccchat` via `Bash(run_in_background=true)` with per-agent `--name <AGENT>`): exits on notification. The exit is what Claude Code surfaces as a background-task-complete event, which auto-wakes Claude to process the message. The watcher's stdout carries a `RESPAWN REQUIRED` banner with the exact `Bash(command="node … --name X --timeout 300", run_in_background=true)` to run next. Stop hook has a safety-net block if the watcher goes missing while the agent is actively engaged.
   - Saves ~12k tokens/hour vs cron at idle. The two watchers coexist harmlessly per agent (one `--persist`, one without).
 - **Event hook stubs** — no-op hooks in join/leave operations, ready for future event bus. Trigger criteria: 3rd stub added, OR 2+ sentinel workarounds, OR sentinel latency < polling baseline
+- **Open Questions banner** — `poll.js` surfaces stale unanswered `type='question'` messages (>15 min) in the hook banner so unanswered questions don't silently age out
+- **Human digest** — `chat-digest.js` renders a structured snapshot (ACTION NEEDED / DECISIONS MADE / OPEN QUESTIONS / DETAILS) for quick human review; flags: `--since-hours` (default 24), `--json`
+- **Consensus signals** — `chat-send.js --agree/--disagree --topic <topic>` records agreement/disagreement; `--rationale` required for `--agree`; `chat-consensus.js` aggregates vote counts per topic
+- **Discussion phase markers** — `chat-send.js --discussion-phase brainstorming|converging|decided` stores discussion phase in message metadata; rendered as colored badge in dashboard and format.js output
+- **ADR auto-trigger** — `notify.js` (PostToolUse) scans recent messages for `[DECISION]` tags and auto-calls `adr-logger.js`, deduping by message ID against `docs/decisions.md`
+- **Phase state machine** — `room_phases` table + `setPhase`/`getPhase`/`getPhaseHistory` in `lib/db.js`; managed via `chat-phase.js`. Valid phases: `brainstorm`, `draft`, `spec`, `execute`, `peer_review`, `review`, `done`, `hold`, `cancelled`
+- **[RISK] tag** — `[RISK]` in message content renders a red RISK badge; `chat-search.js --risk` filters for risk-tagged messages
+- **Phase gate enforcement** — hard gates on `chat-claim.js --claim` (requires `execute` phase) and `chat-plan.js --create/--activate/--quick`; soft warnings on `chat-send.js --agree/--disagree` outside `peer_review`/`review`. Null phase (room with no phase set) passes all gates (backwards compatible)
 
 ## Database Schema
 
@@ -105,6 +116,7 @@ read_cursors (agent_name, project_hash, room, last_id)
 plans (id, title, room, created_by, source_message_id, status, created_at, updated_at)
 plan_tasks (id, plan_id, seq, title, description, verify, status, owner, claimed_at, completed_at, blocked_reason, created_at)
 planner_locks (room, agent_name, claimed_at)
+room_phases (id, room, phase, set_by, notes, set_at)
 ```
 
 ## Testing

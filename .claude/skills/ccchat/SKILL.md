@@ -91,6 +91,9 @@ Key flags:
 - `--to <agent>` — direct message
 - `--urgent` — high priority (triggers stop hook on recipients)
 - `--evidence "<proof>"` — attach verified evidence to the message
+- `--agree --topic <topic> --rationale "<why>"` — record agreement on a topic (`--rationale` required)
+- `--disagree --topic <topic>` — record disagreement (rationale optional)
+- `--discussion-phase brainstorming|converging|decided` — mark discussion phase in metadata (rendered as badge)
 
 ### Ask a question (blocks for responses)
 ```bash
@@ -115,8 +118,9 @@ Read-only. Use `--before <id>` to paginate backwards.
 
 ### Search messages
 ```bash
-node {{CCCHAT_ROOT}}/scripts/chat-search.js --query "<text>" --room general [--pinned] [--verified] [--by <agent>] [--limit 20]
+node {{CCCHAT_ROOT}}/scripts/chat-search.js --query "<text>" --room general [--pinned] [--verified] [--by <agent>] [--risk] [--limit 20]
 ```
+Use `--risk` to filter for `[RISK]`-tagged messages only (can combine with `--query`).
 
 ### Pin/unpin messages
 ```bash
@@ -130,6 +134,31 @@ node {{CCCHAT_ROOT}}/scripts/chat-pin.js --room general        # list pinned
 node {{CCCHAT_ROOT}}/scripts/chat-catchup.js --rooms general [--budget 50] [--compact]
 ```
 Combines unread + handoff notes + recent history + pinned messages. Use when joining mid-conversation.
+
+### Get a digest (structured summary)
+```bash
+node {{CCCHAT_ROOT}}/scripts/chat-digest.js [--room general] [--since-hours 24] [--json]
+```
+Renders: ⚡ ACTION NEEDED (urgent/DMs/@mentions), ✅ DECISIONS MADE (pinned), ❓ OPEN QUESTIONS (unanswered >15 min), ▼ DETAILS. Use when there are 3+ unread messages or after absence. Also available as the `/digest` skill.
+
+### Record and view consensus signals
+```bash
+# Record agreement (rationale required for --agree)
+node {{CCCHAT_ROOT}}/scripts/chat-send.js --message "<text>" --agree --topic "use-sqlite" --rationale "already our bus"
+node {{CCCHAT_ROOT}}/scripts/chat-send.js --message "<text>" --disagree --topic "use-redis"
+
+# Aggregate votes per topic
+node {{CCCHAT_ROOT}}/scripts/chat-consensus.js [--room general] [--topic <topic>] [--json]
+```
+`--agree` and `--disagree` are mutually exclusive. `--topic` and `--rationale` (for agree) are required. **Soft phase warning:** using `--agree`/`--disagree` outside the `peer_review` or `review` phase prints a stderr warning (non-blocking).
+
+### Manage room discussion phase
+```bash
+node {{CCCHAT_ROOT}}/scripts/chat-phase.js --room general --set execute --by <agent>  # advance phase
+node {{CCCHAT_ROOT}}/scripts/chat-phase.js --room general --get                        # current phase
+node {{CCCHAT_ROOT}}/scripts/chat-phase.js --room general --log                        # phase history
+```
+Valid phases: `brainstorm` → `draft` → `spec` → `execute` → `peer_review` → `review` → `done` (also: `hold`, `cancelled`). The phase gates `chat-claim.js --claim` and `chat-plan.js --create/--activate/--quick` — they require `execute` phase (or no phase set).
 
 ## Room management
 
@@ -162,6 +191,7 @@ node {{CCCHAT_ROOT}}/scripts/chat-plan.js --show <plan-id>
 node {{CCCHAT_ROOT}}/scripts/chat-plan.js --list [--status active]
 node {{CCCHAT_ROOT}}/scripts/chat-plan.js --complete <plan-id>
 ```
+**Phase gate:** `--create`, `--activate`, and `--quick` require the room to be in the `execute` phase (or no phase set). Set it first with `chat-phase.js --set execute`.
 
 ### Claim, complete, release tasks
 ```bash
@@ -171,6 +201,7 @@ node {{CCCHAT_ROOT}}/scripts/chat-claim.js --complete <task-id> --status blocked
 node {{CCCHAT_ROOT}}/scripts/chat-claim.js --release <task-id>
 node {{CCCHAT_ROOT}}/scripts/chat-claim.js --status <plan-id>
 ```
+**Phase gate:** `--claim` requires the room to be in the `execute` phase (or no phase set).
 
 ### Pre-claim check (atomic gate)
 ```bash
@@ -209,10 +240,14 @@ Available at `http://localhost:3000`. Features: live message feed via SSE, room 
 | What's NEW | `chat-read` | Advances cursor |
 | Browse PAST | `chat-history` | No cursor change |
 | Get up to speed | `chat-catchup` | Unread + handoff + history + pinned |
+| Quick human overview | `chat-digest` | Organized by priority (action/decisions/questions) |
 | Respond to question | `chat-send --reply-to <id>` | MUST use `--reply-to` or asker won't see it |
 | Block for answer | `chat-ask` | Filters replies by `parent_id` |
 | Find something | `chat-search` | Composable filters |
+| Find risk items | `chat-search --risk` | `[RISK]`-tagged messages only |
 | Preserve a decision | `chat-pin --pin <id>` | Survives in search with `--pinned` |
+| View consensus status | `chat-consensus` | Aggregates agree/disagree by topic |
+| Check/set room phase | `chat-phase --get` / `--set` | Gates plan/claim operations |
 
 ## When to use ccchat
 
@@ -236,27 +271,46 @@ ccchat exists to make decisions BETTER through genuine debate — not to rubber-
 
 Avoid: immediately agreeing without concerns, "sounds good" without new information, accepting claims without checking code, filler phrases without analysis following them.
 
-## Message style
+## Message & Output Discipline
 
-Every word in a ccchat message costs tokens across every agent that reads it. Cut ruthlessly.
+Every word in a ccchat message costs tokens across every agent that reads it.
+Cut ruthlessly.
 
 **Principle:** if deleting a phrase doesn't change the information, delete it.
 
+### Human messages
 Drop these patterns:
-- **Hedging openers** — "One small correction to...", "Just a quick note...", "I wanted to mention..."
-- **Meta-commentary on the conversation** — "you and I arrived at the same resolutions without seeing each other's posts", "as we discussed earlier"
-- **Superlatives and flourishes** — "That's the cleanest signal we're going to get", "This is really interesting"
-- **Throat-clearing** — "FWIW", "just thinking out loud", "take this with a grain of salt"
-- **Empty acknowledgments before substance** — "Good point, but...", "Fair enough, though..."
-
-Before → after:
+- **Hedging openers** — "One small correction to...", "Just a quick note..."
+- **Meta-commentary** — "you and I arrived at the same resolutions..."
+- **Superlatives/flourishes** — "That's the cleanest signal we're going to get"
+- **Throat-clearing** — "FWIW", "just thinking out loud"
+- **Empty acknowledgments** — "Good point, but...", "Fair enough, though..."
 
 | Bloated | Terse |
 |---|---|
-| `One small correction to my #4446 on cross-FS — it could be...` | `Correction to #4446 on cross-FS: ...` |
-| `Independent convergence on all four holes — you and I arrived at the same resolutions without seeing each other's posts. That's the cleanest signal we're going to get.` | `Independent convergence on all four holes.` |
+| `One small correction to my #4446 on cross-FS — it could be...` | `Correction to #4446: ...` |
+| `Independent convergence on all four holes — you and I arrived at the same resolutions without seeing each other's posts.` | `Independent convergence on all four holes.` |
 
 This applies to ccchat messages specifically. Analysis quality rules in *Collaboration norms* still stand — terseness does not mean skipping evidence or tradeoffs, it means stating them without padding.
+
+### Agent output
+- ≤3 sentences unless the task structurally requires more.
+- No preamble, no restatement of the question, no "I'll now..."
+- Report results, not process. Never narrate intent before acting.
+- Structured output (bullets, code blocks) over prose.
+- Tool output: return the actionable result, not raw dumps.
+
+### Inter-agent handoffs
+- Pass only: goal, constraints, relevant findings.
+- Never pass full conversation history.
+- If a file was written, reference the path — don't inline the content.
+- Summarize prior trajectory in ≤5 bullets when context must transfer.
+
+### Compaction triggers
+- At 30% context window usage: summarize history, keep only
+  recent tool calls in full detail.
+- Written artifacts (code, configs): replace inline content with
+  file path reference immediately after creation.
 
 ## Internals
 

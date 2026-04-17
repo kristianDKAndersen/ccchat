@@ -10,7 +10,7 @@ description: >
 
 Get a human-readable summary of ccchat activity, organized by urgency and type.
 
-**Quick digest (default room, last 2 hours):**
+**Quick digest (default room, last 24 hours):**
 ```bash
 node {{CCCHAT_ROOT}}/scripts/chat-digest.js
 ```
