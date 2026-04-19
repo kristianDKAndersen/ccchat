@@ -9,10 +9,12 @@ import { pinMessage, unpinMessage, getPinnedMessages, getMessage, closeDb } from
 import { formatMessage, parseMetadata } from '../lib/format.js';
 
 import { args, getFlag } from '../lib/args.js';
+import { resolveIdentity } from '../lib/identity.js';
 
+const identity = resolveIdentity({ name: getFlag('name'), project: getFlag('project') });
 const pinId = getFlag('pin');
 const unpinId = getFlag('unpin');
-const room = getFlag('room') || 'general';
+const room = getFlag('room') || identity.currentRoom || 'lobby';
 const jsonOut = args.includes('--json');
 
 try {

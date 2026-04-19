@@ -15,7 +15,7 @@ function sleep(ms) {
 
 const identity = resolveIdentity({ name: getFlag('name'), project: getFlag('project') });
 const question = getFlag('question');
-const room = getFlag('room') || 'general';
+const room = getFlag('room') || identity.currentRoom || 'lobby';
 const timeout = parseInt(getFlag('timeout') || '120', 10);
 const urgent = args.includes('--urgent');
 const jsonOut = args.includes('--json');

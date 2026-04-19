@@ -32,8 +32,8 @@ function out(obj) {
 
 try {
   if (hasFlag('claim-planner')) {
-    const room = getFlag('room') || 'general';
     const identity = resolveIdentity({ name: getFlag('name'), project: getFlag('project') });
+    const room = getFlag('room') || identity.currentRoom || 'lobby';
     const result = claimPlanner(room, identity.name);
     if (result.success) {
       out({ ok: true, room, agent: identity.name, _text: `Planner role claimed for #${room} by ${identity.name}` });
@@ -44,11 +44,10 @@ try {
 
   } else if (hasFlag('create')) {
     const title = getFlag('title');
-    const room = getFlag('room') || 'general';
+    const identity = resolveIdentity({ name: getFlag('name'), project: getFlag('project') });
+    const room = getFlag('room') || identity.currentRoom || 'lobby';
     const source = getFlag('source') ? parseInt(getFlag('source'), 10) : null;
     if (!title) { console.error('--title is required'); process.exit(1); }
-
-    const identity = resolveIdentity({ name: getFlag('name'), project: getFlag('project') });
 
     const phaseCheck = checkPhaseAllowed(room, 'plan:create');
     if (!phaseCheck.allowed) {
@@ -176,10 +175,9 @@ try {
 
   } else if (hasFlag('quick')) {
     const title = getFlag('quick');
-    const room = getFlag('room') || 'general';
-    if (!title) { console.error("--quick requires a title (e.g. --quick 'write doc')"); process.exit(1); }
-
     const identity = resolveIdentity({ name: getFlag('name'), project: getFlag('project') });
+    const room = getFlag('room') || identity.currentRoom || 'lobby';
+    if (!title) { console.error("--quick requires a title (e.g. --quick 'write doc')"); process.exit(1); }
 
     const existing = listPlans({ room }).filter(p => p.status === 'draft' || p.status === 'active');
     if (existing.length > 0) {

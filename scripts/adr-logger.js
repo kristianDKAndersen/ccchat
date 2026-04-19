@@ -107,7 +107,7 @@ export function sendWarning(adrId, projectPath, room) {
 
 // --- Main exported function ---
 
-export function adrLogDecision(msg, projectPath, room = 'general') {
+export function adrLogDecision(msg, projectPath, room = 'lobby') {
   // Always write to the canonical shared project, not the sending agent's directory
   const targetProject = projectPath || CANONICAL_PROJECT;
 
@@ -150,7 +150,7 @@ if (isCLI) {
 
   const messageId = parseInt(getFlag('message-id'), 10);
   const projectPath = getFlag('project') || CANONICAL_PROJECT;
-  const room = getFlag('room') || 'general';
+  const room = getFlag('room') || 'lobby';
 
   if (!messageId) {
     process.stderr.write('adr-logger: missing --message-id\n');

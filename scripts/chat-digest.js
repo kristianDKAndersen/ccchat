@@ -7,8 +7,10 @@
 import { getPinnedMessages, getStaleUnansweredQuestions, getRecentMessages, closeDb } from '../lib/db.js';
 import { parseMetadata } from '../lib/format.js';
 import { args, getFlag } from '../lib/args.js';
+import { resolveIdentity } from '../lib/identity.js';
 
-const room = getFlag('room') || 'general';
+const identity = resolveIdentity({ name: getFlag('name'), project: getFlag('project') });
+const room = getFlag('room') || identity.currentRoom || 'lobby';
 const sinceHours = parseInt(getFlag('since-hours') || '24', 10);
 const jsonOut = args.includes('--json');
 

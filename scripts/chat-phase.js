@@ -8,8 +8,10 @@
 
 import { setPhase, getPhase, getPhaseHistory, closeDb } from '../lib/db.js';
 import { args, getFlag } from '../lib/args.js';
+import { resolveIdentity } from '../lib/identity.js';
 
-const room = getFlag('room') || 'general';
+const identity = resolveIdentity({ name: getFlag('name'), project: getFlag('project') });
+const room = getFlag('room') || identity.currentRoom || 'lobby';
 const setFlag = getFlag('set');
 const byAgent = getFlag('by');
 const notesFlag = getFlag('notes');

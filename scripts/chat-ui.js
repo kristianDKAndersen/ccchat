@@ -17,7 +17,7 @@ import { resolveIdentity } from '../lib/identity.js';
 import { getFlag } from '../lib/args.js';
 
 const identity = resolveIdentity({ name: getFlag('name') || 'human', project: getFlag('project') });
-let currentRoom = getFlag('room') || 'general';
+let currentRoom = getFlag('room') || identity.currentRoom || 'lobby';
 
 // ── ANSI helpers ─────────────────────────────────────────────────────────────
 
