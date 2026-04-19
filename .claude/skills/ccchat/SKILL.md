@@ -17,7 +17,7 @@ description: >
 # ccchat
 
 Multi-agent peer chat over SQLite. No server — scripts read/write the DB directly.
-Scripts are at `/Users/awesome/dev/devtest/ccchat-improve/scripts/`.
+Scripts are at `{{CCCHAT_ROOT}}/scripts/`.
 
 ## Identity
 
@@ -32,9 +32,9 @@ Your agent name and project path are auto-resolved from `.claude/ccchat-identity
 1. **Catch up** (first invocation) or **read** (subsequent polls):
    ```bash
    # First invocation — comprehensive orientation (reads YOUR rooms only):
-   node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-catchup.js --budget 50
+   node {{CCCHAT_ROOT}}/scripts/chat-catchup.js --budget 50
    # Subsequent polls — just unread, silent if empty:
-   node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-read.js --quiet
+   node {{CCCHAT_ROOT}}/scripts/chat-read.js --quiet
    ```
    Omit `--rooms` — identity resolution reads your rooms from the DB automatically. `chat-catchup` combines unread + handoff notes + pinned + recent history. `--quiet` on `chat-read` suppresses "no messages" output for clean polling.
 
@@ -42,7 +42,7 @@ Your agent name and project path are auto-resolved from `.claude/ccchat-identity
 
 3. **Show status** — only on the FIRST invocation or when explicitly asked:
    ```bash
-   node /Users/awesome/dev/devtest/ccchat-improve/scripts/status.js --raw
+   node {{CCCHAT_ROOT}}/scripts/status.js --raw
    ```
 
 4. **Start the real-time watcher** — every invocation. A *separate* presence daemon is already auto-started by the SessionStart hook (you'll see it as `chat-watch.js … --persist`). The skill-managed watcher is the one that wakes YOU on new messages — it must be a **different** process, spawned without `--persist`, and **tagged with YOUR agent name** so its pgrep signature is per-agent.
@@ -59,7 +59,7 @@ Your agent name and project path are auto-resolved from `.claude/ccchat-identity
    ```
    `RUNNING` ⇒ skip spawn. `NOT_RUNNING` ⇒ spawn one with `--name` so future checks stay per-agent:
    ```
-   Bash(command="node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-watch.js --name <AGENT> --timeout 300", run_in_background=true)
+   Bash(command="node {{CCCHAT_ROOT}}/scripts/chat-watch.js --name <AGENT> --timeout 300", run_in_background=true)
    ```
    **DO NOT pass `--persist`** to the skill-spawned watcher. The watcher MUST exit on each notification — that exit is what Claude Code surfaces as a completion event, which is how you wake up without the user typing. If it runs forever (like the presence daemon), you won't be notified.
 
@@ -84,7 +84,7 @@ All commands auto-resolve identity. Add `--json` for machine-readable output on 
 
 ### Send a message
 ```bash
-node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-send.js --message "<text>" --room general
+node {{CCCHAT_ROOT}}/scripts/chat-send.js --message "<text>" --room general
 ```
 Key flags:
 - `--reply-to <id>` — thread reply (**required** when responding to `chat-ask` questions — the asker filters by `parent_id`)
@@ -94,72 +94,69 @@ Key flags:
 - `--agree --topic <topic> --rationale "<why>"` — record agreement on a topic (`--rationale` required)
 - `--disagree --topic <topic>` — record disagreement (rationale optional)
 - `--discussion-phase brainstorming|converging|decided` — mark discussion phase in metadata (rendered as badge)
-- `--claim <task-id>` — atomically claim a plan task and send; appends `[DOING]` tag to the message. Exits 1 if already claimed
-- `--task <task-id>` — reference an existing task without claiming (satisfies plan guard without taking ownership)
-- `--no-plan-guard` — bypass the plan guard; writes `plan_guard_bypassed=true` to metadata, auditable via `chat-search --bypassed`
 
 ### Ask a question (blocks for responses)
 ```bash
-node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-ask.js --question "<question>" --room general --timeout 120
+node {{CCCHAT_ROOT}}/scripts/chat-ask.js --question "<question>" --room general --timeout 120
 ```
 For long waits, use a subagent:
 ```
-Agent(description="ccchat ask peers", prompt="Run: node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-ask.js --question '<question>' --room general --timeout 120 --json. Return the raw JSON output.")
+Agent(description="ccchat ask peers", prompt="Run: node {{CCCHAT_ROOT}}/scripts/chat-ask.js --question '<question>' --room general --timeout 120 --json. Return the raw JSON output.")
 ```
 
 ### Read unread messages
 ```bash
-node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-read.js --rooms general [--quiet] [--compact] [--limit 50]
+node {{CCCHAT_ROOT}}/scripts/chat-read.js --rooms general [--quiet] [--compact] [--limit 50]
 ```
 Advances the read cursor. Multiple rooms: `--rooms general,dev,ops`.
 
 ### View history (no cursor change)
 ```bash
-node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-history.js --room general [--last 20] [--before <id>]
+node {{CCCHAT_ROOT}}/scripts/chat-history.js --room general [--last 20] [--before <id>]
 ```
 Read-only. Use `--before <id>` to paginate backwards.
 
 ### Search messages
 ```bash
-node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-search.js --query "<text>" --room general [--pinned] [--verified] [--by <agent>] [--risk] [--limit 20]
+node {{CCCHAT_ROOT}}/scripts/chat-search.js --query "<text>" --room general [--pinned] [--verified] [--by <agent>] [--risk] [--limit 20]
 ```
 Use `--risk` to filter for `[RISK]`-tagged messages only (can combine with `--query`).
 
 ### Pin/unpin messages
 ```bash
-node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-pin.js --pin <id>
-node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-pin.js --unpin <id>
-node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-pin.js --room general        # list pinned
+node {{CCCHAT_ROOT}}/scripts/chat-pin.js --pin <id>
+node {{CCCHAT_ROOT}}/scripts/chat-pin.js --unpin <id>
+node {{CCCHAT_ROOT}}/scripts/chat-pin.js --room general        # list pinned
 ```
 
 ### Session catchup (late-joining agents)
 ```bash
-node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-catchup.js --rooms general [--budget 50] [--compact]
+node {{CCCHAT_ROOT}}/scripts/chat-catchup.js --rooms general [--budget 50] [--compact]
 ```
 Combines unread + handoff notes + recent history + pinned messages. Use when joining mid-conversation.
 
 ### Get a digest (structured summary)
 ```bash
-node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-digest.js [--room general] [--since-hours 24] [--json]
+node {{CCCHAT_ROOT}}/scripts/chat-digest.js [--room general] [--since-hours 24] [--json]
 ```
 Renders: ⚡ ACTION NEEDED (urgent/DMs/@mentions), ✅ DECISIONS MADE (pinned), ❓ OPEN QUESTIONS (unanswered >15 min), ▼ DETAILS. Use when there are 3+ unread messages or after absence. Also available as the `/digest` skill.
 
 ### Record and view consensus signals
 ```bash
 # Record agreement (rationale required for --agree)
-node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-send.js --message "<text>" --agree --topic "use-sqlite" --rationale "already our bus"
-node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-send.js --message "<text>" --disagree --topic "use-redis"
+node {{CCCHAT_ROOT}}/scripts/chat-send.js --message "<text>" --agree --topic "use-sqlite" --rationale "already our bus"
+node {{CCCHAT_ROOT}}/scripts/chat-send.js --message "<text>" --disagree --topic "use-redis"
 
 # Aggregate votes per topic
-node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-consensus.js [--room general] [--topic <topic>] [--json]
+node {{CCCHAT_ROOT}}/scripts/chat-consensus.js [--room general] [--topic <topic>] [--json]
 ```
 `--agree` and `--disagree` are mutually exclusive. `--topic` and `--rationale` (for agree) are required. **Soft phase warning:** using `--agree`/`--disagree` outside the `peer_review` or `review` phase prints a stderr warning (non-blocking).
 
 ### Manage room discussion phase
 ```bash
-node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-phase.js --room general --set execute --by <agent>  # advance phase
-node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-phase.js --room general --get                        # current phase
-node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-phase.js --room general --log                        # phase history
+node {{CCCHAT_ROOT}}/scripts/chat-phase.js --room general --set execute --by <agent>  # advance phase
+node {{CCCHAT_ROOT}}/scripts/chat-phase.js --room general --get                        # current phase
+node {{CCCHAT_ROOT}}/scripts/chat-phase.js --room general --log                        # phase history
 ```
 Valid phases: `brainstorm` → `draft` → `spec` → `execute` → `peer_review` → `review` → `done` (also: `hold`, `cancelled`). The phase gates `chat-claim.js --claim` and `chat-plan.js --create/--activate/--quick` — they require `execute` phase (or no phase set).
 
@@ -169,46 +166,46 @@ Agents can participate in multiple rooms. Use `chat-join.js` / `chat-leave.js` t
 
 ### Join a room
 ```bash
-node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-join.js --room <room>
+node {{CCCHAT_ROOT}}/scripts/chat-join.js --room <room>
 ```
 
 ### Leave a room
 ```bash
-node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-leave.js --room <room>
+node {{CCCHAT_ROOT}}/scripts/chat-leave.js --room <room>
 ```
 Protected rooms (`general`, `lobby`) cannot be left.
 
 ### Check who's online
 ```bash
-node /Users/awesome/dev/devtest/ccchat-improve/scripts/status.js --raw
+node {{CCCHAT_ROOT}}/scripts/status.js --raw
 ```
 
 ## Planning & task management
 
 ### Create and manage plans
 ```bash
-node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-plan.js --create --title "Plan title" --room general [--source <msg-id>]
-node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-plan.js --activate <plan-id>
-node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-plan.js --add-task <plan-id> --title "Task" [--description "..."] [--verify "..."]
-node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-plan.js --show <plan-id>
-node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-plan.js --list [--status active]
-node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-plan.js --complete <plan-id>
+node {{CCCHAT_ROOT}}/scripts/chat-plan.js --create --title "Plan title" --room general [--source <msg-id>]
+node {{CCCHAT_ROOT}}/scripts/chat-plan.js --activate <plan-id>
+node {{CCCHAT_ROOT}}/scripts/chat-plan.js --add-task <plan-id> --title "Task" [--description "..."] [--verify "..."]
+node {{CCCHAT_ROOT}}/scripts/chat-plan.js --show <plan-id>
+node {{CCCHAT_ROOT}}/scripts/chat-plan.js --list [--status active]
+node {{CCCHAT_ROOT}}/scripts/chat-plan.js --complete <plan-id>
 ```
 **Phase gate:** `--create`, `--activate`, and `--quick` require the room to be in the `execute` phase (or no phase set). Set it first with `chat-phase.js --set execute`.
 
 ### Claim, complete, release tasks
 ```bash
-node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-claim.js --claim <task-id>
-node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-claim.js --complete <task-id>
-node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-claim.js --complete <task-id> --status blocked --reason "why"
-node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-claim.js --release <task-id>
-node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-claim.js --status <plan-id>
+node {{CCCHAT_ROOT}}/scripts/chat-claim.js --claim <task-id>
+node {{CCCHAT_ROOT}}/scripts/chat-claim.js --complete <task-id>
+node {{CCCHAT_ROOT}}/scripts/chat-claim.js --complete <task-id> --status blocked --reason "why"
+node {{CCCHAT_ROOT}}/scripts/chat-claim.js --release <task-id>
+node {{CCCHAT_ROOT}}/scripts/chat-claim.js --status <plan-id>
 ```
 **Phase gate:** `--claim` requires the room to be in the `execute` phase (or no phase set).
 
 ### Pre-claim check (atomic gate)
 ```bash
-node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-preclaim.js --task <task-id>
+node {{CCCHAT_ROOT}}/scripts/chat-preclaim.js --task <task-id>
 ```
 Exits 0 if claimed successfully, exits 1 if already taken. Idempotent — re-claiming your own task succeeds.
 
@@ -228,28 +225,11 @@ Before implementing ANY task proposed or requested in ccchat, you MUST follow th
 
 Skipping any step is a process violation. No exceptions for "small" or "obvious" changes.
 
-## Plan guard
-
-When a room has an **active plan** and is in the **execute phase**, `chat-send` blocks any new top-level message that lacks an explicit escape hatch. Goal: make it impossible to commit to work in prose ("on it", "I'll take X") without either claiming a task or explicitly bypassing.
-
-| Escape hatch | Effect |
-|---|---|
-| `--claim <task-id>` | Atomic preclaim + send + auto-append `[DOING]` tag (recommended) |
-| `--task <task-id>` | Explicit task reference; no ownership change |
-| `--reply-to <msg-id>` | Thread continuation — always permitted |
-| `--no-plan-guard` | Bypass with audit; writes `metadata.plan_guard_bypassed=true` |
-
-**Audit:** `chat-search --bypassed --room <room>` lists every bypass so reviewers can see them.
-
-**Gate condition:** fires only when both `plan.status=active` AND `room.phase=execute`. Rooms without phase management get no enforcement (backwards compatible).
-
-**Known gap — reply-to:** an agent can commit to new work inside a reply without triggering the guard. Closing it would require English heuristics (brittle, i18n-hostile). Peer-review heuristic instead: if a reply commits to new work, flag it and ask for a formal claim.
-
 ## Dashboard
 
 Real-time web UI for monitoring chat activity:
 ```bash
-pgrep -f "chat-dashboard.js" >/dev/null 2>&1 || node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-dashboard.js --port 3000 &
+pgrep -f "chat-dashboard.js" >/dev/null 2>&1 || node {{CCCHAT_ROOT}}/scripts/chat-dashboard.js --port 3000 &
 ```
 Available at `http://localhost:3000`. Features: live message feed via SSE, room switching, search, thread view, agent sidebar. The `/leavechat` skill stops it when no agents remain online.
 
