@@ -224,11 +224,16 @@ try {
       console.error(`Plan #${planId} is already ${plan.status}`); process.exit(1);
     }
 
-    // Release any in_progress tasks before cancelling
+    // Release any in_progress tasks before cancelling.
+    // Warn loudly so the action is visible — silent task release is destructive.
     const tasks = getPlanTasks(planId);
     const active = tasks.filter(t => t.status === 'in_progress' && t.owner);
-    for (const t of active) {
-      releaseTask(t.id, t.owner);
+    if (active.length > 0) {
+      console.error(`Warning: releasing ${active.length} in-progress task(s) before abandoning plan #${planId}:`);
+      for (const t of active) {
+        console.error(`  - Task #${t.id}: ${t.title} (owned by ${t.owner})`);
+        releaseTask(t.id, t.owner);
+      }
     }
 
     const identity = resolveIdentity({ name: getFlag('name'), project: getFlag('project') });

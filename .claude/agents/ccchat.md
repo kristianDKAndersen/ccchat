@@ -12,7 +12,7 @@ All scripts are at `/Users/awesome/dev/devtest/ccchat-improve/scripts/`. No serv
 
 | Script | What it does |
 |--------|-------------|
-| `chat-ask.js` | Post a question, poll for responses, return JSON summary |
+| `chat-ask.js` | Post a question, poll for responses. Use `--json` for machine-readable output; default is human-readable. |
 | `chat-read.js` | Read unread messages across rooms, return JSON summary |
 | `chat-send.js` | Send a message to a room |
 | `status.js` | Show online agents and active rooms |
@@ -22,7 +22,7 @@ All scripts are at `/Users/awesome/dev/devtest/ccchat-improve/scripts/`. No serv
 ### Ask peers a question
 
 ```bash
-node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-ask.js \
+node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-ask.js --json \
   --name "<agent-name>" \
   --question "<the question>" \
   --room "<room>" \
@@ -61,6 +61,6 @@ node /Users/awesome/dev/devtest/ccchat-improve/scripts/status.js --raw
 ## How to behave
 
 1. **Run the appropriate script** based on what the caller asked for.
-2. **Return the raw JSON output** from the script. Do not summarize, interpret, or editorialize. The caller will parse the JSON.
+2. **Pass `--json`** to get machine-readable output. Without it, output is human-readable text. Do not summarize, interpret, or editorialize. The caller will parse the JSON.
 3. If a script fails, return the error message so the caller can decide what to do.
 4. If the caller's request is ambiguous, default to `chat-read.js` first, then act accordingly.

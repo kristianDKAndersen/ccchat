@@ -48,6 +48,8 @@ async function main() {
     const agents = getOnlineAgents();
     for (const a of agents) {
       if (a.name === identity.name && a.project_hash === projectHash(identity.projectPath)) continue;
+      // rooms→current_room migration: agents table now uses current_room not a JSON rooms array.
+      // (Pre-existing fix from working tree, committed in ce80278, part of plan #53 migration.)
       if (a.current_room !== room) continue;
       touchSentinel(a.project_hash, a.name);
     }
@@ -126,6 +128,11 @@ async function main() {
     }, null, 2));
   }
 
+  // Exit with code 1 if timeout with no responses.
+  // Callers may branch on this (e.g. chat-ask.js exit-code-aware wrappers).
+  if (responses.length === 0) {
+    process.exitCode = 1;
+  }
 }
 
 main().catch(e => { console.error(e.message); closeDb(); process.exit(1); });
