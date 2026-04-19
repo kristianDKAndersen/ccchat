@@ -74,7 +74,7 @@ try {
     const priority = urgent ? 'urgent' : 'normal';
     const metadata = { mentions, priority, task_status: 'open', assigned: assign || null };
 
-    upsertAgent({ name: identity.name, projectPath: identity.projectPath, rooms: [room] });
+    upsertAgent({ name: identity.name, projectPath: identity.projectPath, currentRoom: room });
     initCursorIfNew(identity.name, identity.projectPath, room);
 
     const result = insertMessage({

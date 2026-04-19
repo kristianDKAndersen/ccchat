@@ -1,7 +1,5 @@
 {
   "name": "ccchat-improve",
   "projectPath": "/Users/awesome/dev/devtest/ccchat-improve",
-  "rooms": [
-    "lobby"
-  ]
+  "currentRoom": "general"
 }

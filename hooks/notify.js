@@ -2,7 +2,7 @@
 // PostToolUse hook — show urgent/@mention banner between tool calls.
 // Lightweight, non-blocking. Rate-limits repeated banners per message_id.
 
-import { getDb, projectHash, getMaxMessageId, closeDb } from '../lib/db.js';
+import { getDb, projectHash, getMaxMessageId, getCrossRoomSignals, closeDb } from '../lib/db.js';
 import { resolveIdentity } from '../lib/identity.js';
 import { parseMetadata } from '../lib/format.js';
 import { readFileSync, writeFileSync, renameSync, existsSync } from 'fs';
@@ -39,12 +39,11 @@ try {
   const hash = projectHash(identity.projectPath);
   const d = getDb();
 
-  // Fast path: check if any room has new messages beyond our read cursor
-  const agent = d.prepare('SELECT rooms FROM agents WHERE name = ? AND project_hash = ?').get(identity.name, hash);
+  // Fast path: check current room for new messages beyond read cursor
+  const agent = d.prepare('SELECT current_room FROM agents WHERE name = ? AND project_hash = ?').get(identity.name, hash);
   if (!agent) { closeDb(); process.exit(0); }
 
-  let rooms;
-  try { rooms = JSON.parse(agent.rooms); } catch { rooms = ['lobby']; }
+  const currentRoom = agent.current_room || 'lobby';
 
   const cursorStmt = d.prepare('SELECT last_id FROM read_cursors WHERE agent_name = ? AND project_hash = ? AND room = ?');
   const msgStmt = d.prepare(`
@@ -69,36 +68,48 @@ try {
 
   const alerts = [];
 
-  for (const room of rooms) {
-    const cursor = cursorStmt.get(identity.name, hash, room);
+  // Current-room content check
+  {
+    const cursor = cursorStmt.get(identity.name, hash, currentRoom);
     const lastId = cursor ? cursor.last_id : 0;
 
-    // Fast path: skip room if no new messages at all
-    const maxId = getMaxMessageId(room);
-    if (maxId <= lastId) continue;
+    const maxId = getMaxMessageId(currentRoom);
+    if (maxId > lastId) {
+      const messages = msgStmt.all(currentRoom, lastId, identity.name);
+      for (const m of messages) {
+        const meta = parseMetadata(m.metadata);
+        const isUrgent = meta.priority === 'urgent';
+        const mentionsMe = meta.mentions.includes(identity.name);
+        const isQuestion = m.type === 'question';
 
-    const messages = msgStmt.all(room, lastId, identity.name);
-    for (const m of messages) {
-      const meta = parseMetadata(m.metadata);
-      const isUrgent = meta.priority === 'urgent';
-      const mentionsMe = meta.mentions.includes(identity.name);
-      const isQuestion = m.type === 'question';
+        if (!isUrgent && !mentionsMe && !isQuestion) continue;
 
-      if (!isUrgent && !mentionsMe && !isQuestion) continue;
+        const key = String(m.id);
+        if (rateLimit[key]) continue;
 
-      // Rate limit: skip if already shown within SUPPRESS_SECONDS
-      const key = String(m.id);
-      if (rateLimit[key]) continue;
+        rateLimit[key] = now;
+        rlChanged = true;
 
-      rateLimit[key] = now;
-      rlChanged = true;
-
-      const tags = [];
-      if (isUrgent) tags.push('URGENT');
-      if (mentionsMe) tags.push('@you');
-      if (isQuestion) tags.push('QUESTION');
-      alerts.push(`  [${room}] ${m.from_agent} (${tags.join(', ')}): ${m.content.slice(0, 120)}`);
+        const tags = [];
+        if (isUrgent) tags.push('URGENT');
+        if (mentionsMe) tags.push('@you');
+        if (isQuestion) tags.push('QUESTION');
+        alerts.push(`  [${currentRoom}] ${m.from_agent} (${tags.join(', ')}): ${m.content.slice(0, 120)}`);
+      }
     }
+  }
+
+  // Cross-room signals: DM / urgent / @mention in other rooms
+  const signals = getCrossRoomSignals(identity.name, identity.projectPath)
+    .filter(s => s.room !== currentRoom);
+  for (const s of signals) {
+    const key = String(s.id);
+    if (rateLimit[key]) continue;
+
+    rateLimit[key] = now;
+    rlChanged = true;
+
+    alerts.push(`  [signal:${s.room}] ${s.from_agent} (${s.tags.join(', ')}): ${s.content.slice(0, 120)}`);
   }
 
   if (rlChanged) saveRateLimit(rlPath, rateLimit);

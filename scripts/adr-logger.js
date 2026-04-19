@@ -85,7 +85,7 @@ _Optional — add context here if helpful_
 
 export function sendWarning(adrId, projectPath, room) {
   try {
-    upsertAgent({ name: 'adr-logger', projectPath, rooms: [room] });
+    upsertAgent({ name: 'adr-logger', projectPath, currentRoom: room });
     insertMessage({
       type: 'system',
       fromAgent: 'adr-logger',
@@ -97,8 +97,7 @@ export function sendWarning(adrId, projectPath, room) {
     const myHash = projectHash(projectPath);
     for (const a of getOnlineAgents()) {
       if (a.name === 'adr-logger' && a.project_hash === myHash) continue;
-      const rooms = JSON.parse(a.rooms || '[]');
-      if (!rooms.includes(room)) continue;
+      if (a.current_room !== room) continue;
       touchSentinel(a.project_hash, a.name);
     }
   } catch {

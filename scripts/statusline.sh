@@ -111,6 +111,7 @@ if [ -n "$PROJECT_PATH" ] && [ "$PROJECT_PATH" != "null" ]; then
 fi
 
 # ── Duration formatting ──────────────────────────────────────────────────────
+: "${DURATION_MS:=0}"
 DURATION_SEC=$((${DURATION_MS%.*} / 1000))
 HOURS=$((DURATION_SEC / 3600))
 MINS=$(( (DURATION_SEC % 3600) / 60 ))

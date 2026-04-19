@@ -21,7 +21,7 @@ try {
       online_agents: agents.map(a => ({
         name: a.name,
         project_path: a.project_path,
-        rooms: JSON.parse(a.rooms || '["general"]'),
+        currentRoom: a.current_room || 'lobby',
         online: !!a.online,
         last_seen: a.last_seen,
       })),
@@ -32,8 +32,7 @@ try {
     } else {
       console.log(`Online agents (${agents.length}):\n`);
       for (const a of agents) {
-        const rooms = JSON.parse(a.rooms || '["general"]').join(', ');
-        console.log(`  ${a.name} — ${a.project_path} [${rooms}] (last seen: ${a.last_seen})`);
+        console.log(`  ${a.name} — ${a.project_path} [${a.current_room || 'lobby'}] (last seen: ${a.last_seen})`);
       }
     }
   }

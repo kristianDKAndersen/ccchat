@@ -7,6 +7,10 @@
           {
             "type": "command",
             "command": "node /Users/awesome/dev/devtest/ccchat-improve/hooks/poll.js"
+          },
+          {
+            "type": "command",
+            "command": "node /Users/awesome/dev/devtest/ccchat-improve/hooks/empty-project.js"
           }
         ]
       }
@@ -40,11 +44,50 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /Users/awesome/dev/devtest/ccchat-improve/hooks/start.js"
+          }
+        ]
+      }
     ]
   },
   "statusLine": {
     "type": "command",
     "command": "bash /Users/awesome/dev/devtest/ccchat-improve/scripts/statusline.sh",
     "padding": 1
+  },
+  "permissions": {
+    "allow": [
+      "Bash(node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-send.js:*)",
+      "Bash(node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-read.js:*)",
+      "Bash(node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-ask.js:*)",
+      "Bash(node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-history.js:*)",
+      "Bash(node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-search.js:*)",
+      "Bash(node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-join.js:*)",
+      "Bash(node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-leave.js:*)",
+      "Bash(node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-pin.js:*)",
+      "Bash(node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-plan.js:*)",
+      "Bash(node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-claim.js:*)",
+      "Bash(node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-preclaim.js:*)",
+      "Bash(node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-catchup.js:*)",
+      "Bash(node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-watch.js:*)",
+      "Bash(node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-dashboard.js:*)",
+      "Bash(node /Users/awesome/dev/devtest/ccchat-improve/scripts/status.js:*)",
+      "Bash(node /Users/awesome/dev/devtest/ccchat-improve/scripts/session-bootstrap.js:*)",
+      "Bash(node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-digest.js:*)",
+      "Bash(node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-consensus.js:*)",
+      "Bash(node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-phase.js:*)",
+      "Bash(node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-ui.js:*)",
+      "Bash(node /Users/awesome/dev/devtest/ccchat-improve/scripts/chat-task-legacy.js:*)",
+      "Bash(node /Users/awesome/dev/devtest/ccchat-improve/scripts/adr-logger.js:*)",
+      "Bash(node /Users/awesome/dev/devtest/ccchat-improve/scripts/setup.js:*)",
+      "Bash(pgrep -f:*)",
+      "Bash(pkill -f \"chat-watch.js:*)"
+    ]
   }
 }

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Read unread messages across rooms.
-// Usage: node chat-read.js --name <agent> --project <path> [--rooms general,dev] [--limit 20] [--json] [--compact]
+// Read unread messages in current room.
+// Usage: node chat-read.js --name <agent> --project <path> [--room room] [--limit 20] [--json] [--compact]
 
 import { getDb, upsertAgent, getUnreadMessages, getMaxMessageId, updateCursor, initCursorIfNew, closeDb } from '../lib/db.js';
 import { resolveIdentity } from '../lib/identity.js';
@@ -9,44 +9,40 @@ import { formatMessage, formatRoomHeader, formatNoMessages, parseMetadata } from
 import { args, getFlag } from '../lib/args.js';
 
 const identity = resolveIdentity({ name: getFlag('name'), project: getFlag('project') });
-const rooms = getFlag('rooms') ? getFlag('rooms').split(',').map(r => r.trim()) : identity.rooms;
+const room = getFlag('room') || identity.currentRoom || 'lobby';
 const limit = parseInt(getFlag('limit') || '50', 10);
 const jsonOut = args.includes('--json');
 const compact = args.includes('--compact');
 const quiet = args.includes('--quiet');
 
 try {
-  upsertAgent({ name: identity.name, projectPath: identity.projectPath, rooms, setOnline: false });
+  upsertAgent({ name: identity.name, projectPath: identity.projectPath, currentRoom: identity.currentRoom, setOnline: false });
 
-  const result = { rooms: {}, total_unread: 0 };
+  const db = getDb();
+  let messages = [];
+  let totalUnread = 0;
 
   // Wrap read+cursor-advance in a single transaction to prevent messages
   // slipping between read and cursor update (atomicity bug fix)
-  const db = getDb();
-  const readAllRooms = db.transaction(() => {
-    for (const room of rooms) {
-      initCursorIfNew(identity.name, identity.projectPath, room);
-      const messages = getUnreadMessages(identity.name, identity.projectPath, room, limit);
+  const readRoom = db.transaction(() => {
+    initCursorIfNew(identity.name, identity.projectPath, room);
+    messages = getUnreadMessages(identity.name, identity.projectPath, room, limit);
 
-      // Always advance cursor to max message ID (including own messages) to prevent re-triggering
-      const maxId = getMaxMessageId(room);
-      if (maxId > 0) {
-        updateCursor(identity.name, identity.projectPath, room, maxId);
-      }
-
-      if (messages.length > 0) {
-        result.rooms[room] = messages;
-        result.total_unread += messages.length;
-      }
+    // Always advance cursor to max message ID (including own messages) to prevent re-triggering
+    const maxId = getMaxMessageId(room);
+    if (maxId > 0) {
+      updateCursor(identity.name, identity.projectPath, room, maxId);
     }
+
+    totalUnread = messages.length;
   });
-  readAllRooms();
+  readRoom();
 
   if (jsonOut) {
-    // Structured JSON with [reply to] prefix for backwards compat
-    const jsonResult = { rooms: {}, total_unread: result.total_unread };
-    for (const [room, msgs] of Object.entries(result.rooms)) {
-      jsonResult.rooms[room] = msgs.map(m => {
+    if (totalUnread === 0) {
+      console.log(JSON.stringify({ room, messages: [], total_unread: 0 }));
+    } else {
+      const formatted = messages.map(m => {
         const meta = parseMetadata(m.metadata);
         return {
           id: m.id,
@@ -59,23 +55,17 @@ try {
           created_at: m.created_at,
         };
       });
-    }
-    if (jsonResult.total_unread === 0) {
-      console.log(JSON.stringify({ rooms: {}, total_unread: 0, listening: rooms }));
-    } else {
-      console.log(JSON.stringify(jsonResult, null, 2));
+      console.log(JSON.stringify({ room, messages: formatted, total_unread: totalUnread }, null, 2));
     }
   } else {
-    if (result.total_unread === 0) {
-      if (!quiet) console.log(formatNoMessages(rooms));
+    if (totalUnread === 0) {
+      if (!quiet) console.log(formatNoMessages([room]));
     } else {
-      for (const [room, msgs] of Object.entries(result.rooms)) {
-        console.log(formatRoomHeader(room, msgs.length));
-        for (const m of msgs) {
-          console.log(formatMessage(m, { compact }));
-        }
+      console.log(formatRoomHeader(room, totalUnread));
+      for (const m of messages) {
+        console.log(formatMessage(m, { compact }));
       }
-      console.log(`\nTotal: ${result.total_unread} unread`);
+      console.log(`\nTotal: ${totalUnread} unread`);
     }
   }
 } finally {

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Session bootstrap — get oriented quickly with unread, handoff notes, and recent history.
-// Usage: node chat-catchup.js --name <agent> --project <path> [--rooms general,dev] [--budget 50] [--json] [--compact]
+// Usage: node chat-catchup.js --name <agent> --project <path> [--room room] [--budget 30] [--json] [--compact]
 
 import { getDb, upsertAgent, getUnreadMessages, getMaxMessageId, getRecentMessages, getHandoffNotes, getPinnedMessages, updateCursor, initCursorIfNew, closeDb } from '../lib/db.js';
 import { resolveIdentity } from '../lib/identity.js';
@@ -9,13 +9,13 @@ import { formatMessage, formatRoomHeader, parseMetadata } from '../lib/format.js
 import { args, getFlag } from '../lib/args.js';
 
 const identity = resolveIdentity({ name: getFlag('name'), project: getFlag('project') });
-const rooms = getFlag('rooms') ? getFlag('rooms').split(',').map(r => r.trim()) : identity.rooms;
-const budget = parseInt(getFlag('budget') || '50', 10);
+const room = getFlag('room') || identity.currentRoom || 'lobby';
+const budget = parseInt(getFlag('budget') || '30', 10);
 const jsonOut = args.includes('--json');
 const compact = args.includes('--compact');
 
 try {
-  upsertAgent({ name: identity.name, projectPath: identity.projectPath, rooms, setOnline: false });
+  upsertAgent({ name: identity.name, projectPath: identity.projectPath, currentRoom: room, setOnline: false });
 
   const result = { handoff_notes: [], pinned: {}, unread: {}, backfill: {}, total_unread: 0, total_pinned: 0, total_backfill: 0 };
 
@@ -31,51 +31,43 @@ try {
   }
 
   // Section 2: Pinned messages (context)
-  for (const room of rooms) {
-    const pinned = getPinnedMessages(room);
-    if (pinned.length > 0) {
-      result.pinned[room] = pinned;
-      result.total_pinned += pinned.length;
-    }
+  const pinned = getPinnedMessages(room);
+  if (pinned.length > 0) {
+    result.pinned[room] = pinned;
+    result.total_pinned += pinned.length;
   }
 
   // Section 3: Unread messages (most actionable)
   // Wrap read+cursor-advance in transaction to prevent messages slipping through
-  let budgetRemaining = budget;
   const db = getDb();
   const readUnread = db.transaction(() => {
-    for (const room of rooms) {
-      initCursorIfNew(identity.name, identity.projectPath, room);
-      const messages = getUnreadMessages(identity.name, identity.projectPath, room, budgetRemaining);
+    initCursorIfNew(identity.name, identity.projectPath, room);
+    const messages = getUnreadMessages(identity.name, identity.projectPath, room, budget);
 
-      if (messages.length > 0) {
-        result.unread[room] = messages;
-        result.total_unread += messages.length;
-        budgetRemaining -= messages.length;
-      }
+    if (messages.length > 0) {
+      result.unread[room] = messages;
+      result.total_unread += messages.length;
+    }
 
-      // Advance cursor
-      const maxId = getMaxMessageId(room);
-      if (maxId > 0) {
-        updateCursor(identity.name, identity.projectPath, room, maxId);
-      }
+    // Advance cursor
+    const maxId = getMaxMessageId(room);
+    if (maxId > 0) {
+      updateCursor(identity.name, identity.projectPath, room, maxId);
     }
   });
   readUnread();
 
-  // Section 4: History backfill (background context, up to remaining budget)
-  if (budgetRemaining > 0) {
-    for (const room of rooms) {
-      const unreadIds = new Set((result.unread[room] || []).map(m => m.id));
-      const recent = getRecentMessages(room, budgetRemaining);
-      const backfill = recent.filter(m => !unreadIds.has(m.id));
+  // Section 4: History backfill (background context)
+  // Cap at 10 messages, skip entirely if unread >= 30
+  const backfillCap = result.total_unread >= 30 ? 0 : Math.min(10, Math.max(0, 30 - result.total_unread));
+  if (backfillCap > 0) {
+    const unreadIds = new Set((result.unread[room] || []).map(m => m.id));
+    const recent = getRecentMessages(room, backfillCap, 1); // sinceHours=1
+    const backfill = recent.filter(m => !unreadIds.has(m.id));
 
-      if (backfill.length > 0) {
-        result.backfill[room] = backfill;
-        result.total_backfill += backfill.length;
-        budgetRemaining -= backfill.length;
-      }
-      if (budgetRemaining <= 0) break;
+    if (backfill.length > 0) {
+      result.backfill[room] = backfill;
+      result.total_backfill += backfill.length;
     }
   }
 
@@ -90,8 +82,8 @@ try {
       total_unread: result.total_unread,
       total_backfill: result.total_backfill,
     };
-    for (const [room, msgs] of Object.entries(result.pinned)) {
-      jsonResult.pinned[room] = msgs.map(m => {
+    for (const [r, msgs] of Object.entries(result.pinned)) {
+      jsonResult.pinned[r] = msgs.map(m => {
         const meta = parseMetadata(m.metadata);
         return {
           id: m.id, type: m.type, from: m.from_agent,
@@ -101,8 +93,8 @@ try {
         };
       });
     }
-    for (const [room, msgs] of Object.entries(result.unread)) {
-      jsonResult.unread[room] = msgs.map(m => {
+    for (const [r, msgs] of Object.entries(result.unread)) {
+      jsonResult.unread[r] = msgs.map(m => {
         const meta = parseMetadata(m.metadata);
         return {
           id: m.id, type: m.type, from: m.from_agent,
@@ -112,8 +104,8 @@ try {
         };
       });
     }
-    for (const [room, msgs] of Object.entries(result.backfill)) {
-      jsonResult.backfill[room] = msgs.map(m => {
+    for (const [r, msgs] of Object.entries(result.backfill)) {
+      jsonResult.backfill[r] = msgs.map(m => {
         const meta = parseMetadata(m.metadata);
         return {
           id: m.id, type: m.type, from: m.from_agent,
@@ -138,8 +130,8 @@ try {
     // Pinned
     if (result.total_pinned > 0) {
       console.log('=== Pinned Messages ===');
-      for (const [room, msgs] of Object.entries(result.pinned)) {
-        console.log(`[${room}] ${msgs.length} pinned:`);
+      for (const [r, msgs] of Object.entries(result.pinned)) {
+        console.log(`[${r}] ${msgs.length} pinned:`);
         for (const m of msgs) {
           console.log(formatMessage(m, { compact: true }));
         }
@@ -150,8 +142,8 @@ try {
     // Unread
     if (result.total_unread > 0) {
       console.log('=== Unread Messages ===');
-      for (const [room, msgs] of Object.entries(result.unread)) {
-        console.log(formatRoomHeader(room, msgs.length));
+      for (const [r, msgs] of Object.entries(result.unread)) {
+        console.log(formatRoomHeader(r, msgs.length));
         for (const m of msgs) {
           console.log(formatMessage(m, { compact }));
         }
@@ -162,8 +154,8 @@ try {
     // Backfill
     if (result.total_backfill > 0) {
       console.log('=== Recent History ===');
-      for (const [room, msgs] of Object.entries(result.backfill)) {
-        console.log(`[${room}] ${msgs.length} recent message${msgs.length !== 1 ? 's' : ''}:`);
+      for (const [r, msgs] of Object.entries(result.backfill)) {
+        console.log(`[${r}] ${msgs.length} recent message${msgs.length !== 1 ? 's' : ''}:`);
         for (const m of msgs) {
           console.log(formatMessage(m, { compact: true }));
         }
@@ -179,7 +171,7 @@ try {
       if (result.total_pinned > 0) parts.push(`${result.total_pinned} pinned`);
       if (result.total_backfill > 0) parts.push(`${result.total_backfill} backfill`);
       if (result.handoff_notes.length > 0) parts.push(`${result.handoff_notes.length} handoff note${result.handoff_notes.length !== 1 ? 's' : ''}`);
-      console.log(`Catchup: ${parts.join(', ')}. Listening in: ${rooms.join(', ')}`);
+      console.log(`Catchup: ${parts.join(', ')}. Listening in: ${room}`);
     }
   }
 } finally {

@@ -2,7 +2,7 @@
 // Stop hook — block if there are unread messages.
 // Reads DB directly, no server needed.
 
-import { upsertAgent, getUnreadCountAllRooms, getUnreadMessages, initCursorIfNew, closeDb, getDb } from '../lib/db.js';
+import { upsertAgent, getUnreadCount, getUnreadMessages, initCursorIfNew, getCrossRoomSignals, closeDb, getDb } from '../lib/db.js';
 import { resolveIdentity } from '../lib/identity.js';
 import { parseMetadata } from '../lib/format.js';
 import { execSync } from 'child_process';
@@ -32,21 +32,16 @@ async function main() {
   // agent alive, but DO NOT promote to online=1: that would clobber an
   // intentional /leavechat offline state. Promotion is chat-watch's and
   // chat-send's job; here we just heartbeat.
-  upsertAgent({ name: identity.name, projectPath: identity.projectPath, rooms: identity.rooms, setOnline: false });
-  for (const room of identity.rooms) {
-    initCursorIfNew(identity.name, identity.projectPath, room);
-  }
+  const currentRoom = identity.currentRoom || 'lobby';
+  upsertAgent({ name: identity.name, projectPath: identity.projectPath, currentRoom, setOnline: false });
+  initCursorIfNew(identity.name, identity.projectPath, currentRoom);
 
-  const counts = getUnreadCountAllRooms(identity.name, identity.projectPath);
-  let total = 0;
-  for (const c of counts.values()) total += c;
+  const total = getUnreadCount(identity.name, identity.projectPath, currentRoom);
 
   if (total > 0) {
     // Scope: only block on messages the agent actually needs to engage with.
     //   (1) Addressed to them: urgent, @mention, question type, or DM (to_agent=self)
     //   (2) Active discussion: unread in a room where this agent posted recently
-    // Pure lobby broadcasts in rooms the agent is lurking in should NOT block —
-    // otherwise a noisy room freezes every dev session that happens to be a member.
     const db = getDb();
     const activeRooms = new Set(
       db.prepare(
@@ -57,12 +52,10 @@ async function main() {
     const previewLines = [];
     let blockCount = 0;
 
-    for (const [room] of counts) {
-      const messages = getUnreadMessages(identity.name, identity.projectPath, room, 10);
-      const filtered = messages.filter(m => m.from_agent !== identity.name);
-      if (filtered.length === 0) continue;
-
-      const roomIsActive = activeRooms.has(room);
+    const messages = getUnreadMessages(identity.name, identity.projectPath, currentRoom, 10);
+    const filtered = messages.filter(m => m.from_agent !== identity.name);
+    if (filtered.length > 0) {
+      const roomIsActive = activeRooms.has(currentRoom);
       const relevant = filtered.filter(m => {
         const meta = parseMetadata(m.metadata);
         if (meta.priority === 'urgent') return true;
@@ -72,7 +65,6 @@ async function main() {
         if (roomIsActive) return true;
         return false;
       });
-      if (relevant.length === 0) continue;
       blockCount += relevant.length;
 
       for (const m of relevant.slice(0, 3)) {
@@ -84,9 +76,9 @@ async function main() {
         if (m.to_agent === identity.name) tags.push('DM');
         if (roomIsActive && tags.length === 0) tags.push('active-thread');
         const tag = tags.length ? ` (${tags.join(', ')})` : '';
-        previewLines.push(`  [${room}] ${m.from_agent}${tag}: ${m.content.slice(0, 120)}`);
+        previewLines.push(`  [${currentRoom}] ${m.from_agent}${tag}: ${m.content.slice(0, 120)}`);
       }
-      if (relevant.length > 3) previewLines.push(`  [${room}] ...+${relevant.length - 3} more requiring response`);
+      if (relevant.length > 3) previewLines.push(`  [${currentRoom}] ...+${relevant.length - 3} more requiring response`);
     }
 
     if (blockCount > 0) {
@@ -98,8 +90,23 @@ async function main() {
       console.log(JSON.stringify({ decision: 'block', reason }));
       return;
     }
-    // Passive unread (lobby lurking, quiet rooms) doesn't block. The poll hook
-    // still surfaces these as a stderr banner on the next UserPromptSubmit.
+    // Passive unread (lobby lurking, quiet rooms) doesn't block.
+  }
+
+  // Cross-room signals: DM / urgent / @mention in other rooms also block
+  const crossSignals = getCrossRoomSignals(identity.name, identity.projectPath)
+    .filter(s => s.room !== currentRoom);
+  if (crossSignals.length > 0) {
+    const previewLines = crossSignals.slice(0, 3).map(s =>
+      `  [${s.room}] ${s.from_agent} (${s.tags.join(', ')}): ${s.content.slice(0, 120)}`
+    );
+    const reason = [
+      `CCCHAT: ${crossSignals.length} signal${crossSignals.length !== 1 ? 's' : ''} in other room${crossSignals.length !== 1 ? 's' : ''} — use chat-join.js to switch rooms and respond.`,
+      ...previewLines,
+      '  ⚠ BLOCKING: Call Skill(skill="ccchat") to review cross-room signals.',
+    ].join('\n');
+    console.log(JSON.stringify({ decision: 'block', reason }));
+    return;
   }
 
   // Watcher-missing safety net: if this agent has posted to ccchat in the last

@@ -7,7 +7,7 @@ import { formatMessage, formatHistoryHeader, formatHistoryFooter, parseMetadata 
 
 import { args, getFlag } from '../lib/args.js';
 
-const room = getFlag('room') || 'general';
+const room = getFlag('room') || 'lobby';
 const last = parseInt(getFlag('last') || '20', 10);
 const beforeRaw = getFlag('before');
 const beforeId = beforeRaw ? parseInt(beforeRaw, 10) : null;

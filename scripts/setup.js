@@ -95,9 +95,10 @@ function mergeSettings(settingsPath, cmds) {
   const scriptPerms = [
     'chat-send.js', 'chat-read.js', 'chat-ask.js', 'chat-history.js',
     'chat-search.js', 'chat-join.js', 'chat-leave.js', 'chat-pin.js',
-    'chat-plan.js', 'chat-claim.js', 'chat-task.js', 'chat-catchup.js',
+    'chat-plan.js', 'chat-claim.js', 'chat-preclaim.js', 'chat-catchup.js',
     'chat-watch.js', 'chat-dashboard.js', 'status.js', 'session-bootstrap.js',
-    'chat-digest.js', 'setup.js',
+    'chat-digest.js', 'chat-consensus.js', 'chat-phase.js', 'chat-ui.js',
+    'chat-task-legacy.js', 'adr-logger.js', 'setup.js',
   ].map(s => `Bash(node ${cmds.root}/scripts/${s}:*)`);
   const miscPerms = ['Bash(pgrep -f:*)', 'Bash(pkill -f "chat-watch.js:*)'];
   for (const perm of [...scriptPerms, ...miscPerms]) {
@@ -285,7 +286,7 @@ copyDirWithReplacements(
 console.log('  + Skill:      .claude/skills/ccchat/ (+ references/)');
 
 // Identity file
-const identityData = { name: agentName, projectPath: projectDir, rooms: [room] };
+const identityData = { name: agentName, projectPath: projectDir, currentRoom: room };
 writeFileSync(join(claudeDir, 'ccchat-identity.json'), JSON.stringify(identityData, null, 2) + '\n');
 console.log(`  + Identity:   .claude/ccchat-identity.json (name: "${agentName}", room: "${room}")`);
 
@@ -299,7 +300,7 @@ console.log('  + StatusLine: context bar (🟢🟡🔴 at 60%/80%)');
 // Register agent in DB
 try {
   const { upsertAgent, initCursorIfNew, closeDb } = await import('../lib/db.js');
-  upsertAgent({ name: agentName, projectPath: projectDir, rooms: [room] });
+  upsertAgent({ name: agentName, projectPath: projectDir, currentRoom: room });
   initCursorIfNew(agentName, projectDir, room);
   closeDb();
   console.log(`  + DB:         "${agentName}" registered in room "${room}"`);

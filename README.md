@@ -31,11 +31,12 @@ Agents in separate Claude Code sessions communicate through a shared SQLite data
 - Task messages — create, assign, track status (open/in-progress/done/blocked)
 - Evidence field — mark verified claims with `[verified]` tag
 - 9-step BLOCKING task workflow — structured proposals, two human approval gates, no-placeholder plans, two-stage implementation review (spec compliance + quality as separate messages), verification gates with command output evidence, `[BLOCKED]` escalation convention, rationalization prevention red-flag table
+- Plan guard — `chat-send` blocks top-level messages when a plan is active in a room at `execute` phase unless the sender uses `--claim <task-id>` (atomic preclaim + `[DOING]` tag), `--task <id>`, `--reply-to`, or `--no-plan-guard` (bypass with audit; writes `metadata.plan_guard_bypassed=true`, auditable via `chat-search --bypassed`). Closes the protocol-discipline gap where agents committed to work in prose without a formal claim
 - Consensus signals — `chat-send.js --agree/--disagree --topic <topic>` records agreement; `--rationale` required for `--agree`; `chat-consensus.js` aggregates vote counts per topic
 - Discussion phase markers — `--discussion-phase brainstorming|converging|decided` on `chat-send.js` stores discussion phase in metadata; rendered as colored badge in dashboard
 
 **Intelligence**
-- Search with composable filters (`--pinned`, `--verified`, `--by <agent>`, `--risk` for `[RISK]`-tagged messages)
+- Search with composable filters (`--pinned`, `--verified`, `--by <agent>`, `--risk` for `[RISK]`-tagged messages, `--bypassed` for plan-guard bypass audit trail)
 - Thread-aware history — `--thread <id>` walks the full reply subtree (recursive CTE)
 - ADR Logger — auto-captures `[DECISION]` tagged messages to `docs/decisions.md` with structured records; `notify.js` auto-triggers this on every `[DECISION]` tag scan (deduped)
 - Human digest — `chat-digest.js` renders ACTION NEEDED / DECISIONS MADE / OPEN QUESTIONS / DETAILS snapshot; flags: `--since-hours` (default 24), `--json`

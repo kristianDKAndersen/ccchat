@@ -1,29 +1,42 @@
 #!/usr/bin/env node
 // Search messages by content with optional filters.
-// Usage: node chat-search.js --query "<text>" [--room general] [--limit 20] [--pinned] [--verified] [--by <agent>] [--json]
+// Usage: node chat-search.js [--query "<text>"] [--room <room>] [--limit 20] [--pinned] [--verified] [--by <agent>] [--risk] [--json]
+// --query is optional when --pinned, --verified, --by, or --risk is set (browse mode).
+// --room defaults to the agent's primary room (from identity), fallback 'lobby'.
 
 import { searchMessages, closeDb } from '../lib/db.js';
+import { resolveIdentity } from '../lib/identity.js';
 import { formatMessage, parseMetadata } from '../lib/format.js';
 
 import { args, getFlag } from '../lib/args.js';
 
 const riskOnly = args.includes('--risk');
-const query = getFlag('query') || (riskOnly ? '[RISK' : null);
-const room = getFlag('room') || 'general';
-const limit = parseInt(getFlag('limit') || '20', 10);
 const pinnedOnly = args.includes('--pinned');
 const verifiedOnly = args.includes('--verified');
+const bypassedOnly = args.includes('--bypassed');
 const byAgent = getFlag('by');
+const filterActive = riskOnly || pinnedOnly || verifiedOnly || bypassedOnly || byAgent;
+
+// --query is optional when a filter flag is set (empty query = match all in room)
+const query = getFlag('query') || (riskOnly ? '[RISK' : (filterActive ? '' : null));
+
+// Default room: agent's primary room from identity, fallback 'lobby'
+const identity = resolveIdentity({ name: getFlag('name'), project: getFlag('project') });
+const defaultRoom = identity.currentRoom || 'lobby';
+const room = getFlag('room') || defaultRoom;
+
+const limit = parseInt(getFlag('limit') || '20', 10);
 const jsonOut = args.includes('--json');
 
-if (!query) {
-  console.error('Usage: node chat-search.js --query "<text>" [--room general] [--limit 20] [--pinned] [--verified] [--risk] [--by <agent>] [--json]');
+if (query === null) {
+  console.error('Usage: node chat-search.js --query "<text>" [--room <room>] [--limit 20] [--pinned] [--verified] [--risk] [--bypassed] [--by <agent>] [--json]');
+  console.error('Tip: --query is optional when --pinned, --verified, --risk, --bypassed, or --by is set.');
   process.exit(1);
 }
 
 try {
   // Fetch more than limit to account for post-query filtering
-  const fetchLimit = (pinnedOnly || verifiedOnly || riskOnly || byAgent) ? limit * 5 : limit;
+  const fetchLimit = (pinnedOnly || verifiedOnly || riskOnly || bypassedOnly || byAgent) ? limit * 5 : limit;
   let results = searchMessages(room, query, fetchLimit);
 
   // Apply filters in JS (small result sets, avoids coupling to SQLite JSON functions)
@@ -39,6 +52,12 @@ try {
   if (riskOnly) {
     results = results.filter(m => m.content.includes('[RISK'));
   }
+  if (bypassedOnly) {
+    results = results.filter(m => {
+      const meta = parseMetadata(m.metadata);
+      return meta.plan_guard_bypassed === true;
+    });
+  }
   if (byAgent) {
     const agent = byAgent.toLowerCase();
     results = results.filter(m => m.from_agent.toLowerCase() === agent);
@@ -52,6 +71,7 @@ try {
   if (pinnedOnly) filters.push('pinned');
   if (verifiedOnly) filters.push('verified');
   if (riskOnly) filters.push('risk');
+  if (bypassedOnly) filters.push('bypassed');
   if (byAgent) filters.push(`by:${byAgent}`);
   const filterDesc = filters.length ? ` [${filters.join(', ')}]` : '';
 

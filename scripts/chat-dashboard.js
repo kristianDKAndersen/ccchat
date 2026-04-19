@@ -108,7 +108,7 @@ const pollInterval = setInterval(() => {
     const agents = getOnlineAgents().map(a => ({
       name: a.name,
       project: a.project_path,
-      rooms: JSON.parse(a.rooms || '["general"]'),
+      rooms: [a.current_room || 'lobby'],
       last_seen: a.last_seen,
     }));
     const snap = JSON.stringify(agents);
@@ -177,7 +177,7 @@ const server = createServer(async (req, res) => {
       const agents = getOnlineAgents().map(a => ({
         name: a.name,
         project: a.project_path,
-        rooms: JSON.parse(a.rooms || '["general"]'),
+        rooms: [a.current_room || 'lobby'],
         last_seen: a.last_seen,
       }));
       jsonResponse(res, agents);
@@ -241,7 +241,7 @@ const server = createServer(async (req, res) => {
         return;
       }
       // Create room by inserting a system message
-      upsertAgent({ name: SENDER_NAME, projectPath: SENDER_PROJECT, rooms: [roomName] });
+      upsertAgent({ name: SENDER_NAME, projectPath: SENDER_PROJECT, currentRoom: roomName });
       initCursorIfNew(SENDER_NAME, SENDER_PROJECT, roomName);
       insertMessage({
         type: 'system',
@@ -290,7 +290,7 @@ const server = createServer(async (req, res) => {
       const mentions = parseMentions(message);
       const metadata = { mentions, priority: data.urgent ? 'urgent' : 'normal' };
 
-      upsertAgent({ name: SENDER_NAME, projectPath: SENDER_PROJECT, rooms: [targetRoom] });
+      upsertAgent({ name: SENDER_NAME, projectPath: SENDER_PROJECT, currentRoom: targetRoom });
       initCursorIfNew(SENDER_NAME, SENDER_PROJECT, targetRoom);
 
       const { id } = insertMessage({

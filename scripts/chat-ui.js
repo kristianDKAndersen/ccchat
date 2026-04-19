@@ -6,8 +6,8 @@ import * as readline from 'readline';
 import {
   upsertAgent, insertMessage, getMessagesSince, getHistory, getOnlineAgents,
   updateCursor, initCursorIfNew, getMaxMessageId, pinMessage, unpinMessage,
-  getPinnedMessages, searchMessages, setAgentOffline, getUnreadCountAllRooms,
-  getMessage, closeDb, projectHash,
+  getPinnedMessages, searchMessages, setAgentOffline, getUnreadCount,
+  getCrossRoomSignals, getMessage, closeDb, projectHash,
 } from '../lib/db.js';
 import { formatMessage, parseMentions, parseMetadata } from '../lib/format.js';
 import { resolveIdentity } from '../lib/identity.js';
@@ -142,7 +142,7 @@ function poll() {
       updateCursor(identity.name, identity.projectPath, currentRoom, lastSeenId);
     }
     // Keep agent online
-    upsertAgent({ name: identity.name, projectPath: identity.projectPath, rooms: [currentRoom] });
+    upsertAgent({ name: identity.name, projectPath: identity.projectPath, currentRoom });
   } catch (e) {
     // Silently ignore poll errors
   }
@@ -238,7 +238,7 @@ function handleCommand(line) {
       const newRoom = parts[1];
       if (!newRoom) { systemMsg('Usage: /room <name>'); break; }
       currentRoom = newRoom;
-      upsertAgent({ name: identity.name, projectPath: identity.projectPath, rooms: [currentRoom] });
+      upsertAgent({ name: identity.name, projectPath: identity.projectPath, currentRoom });
       initCursorIfNew(identity.name, identity.projectPath, currentRoom);
       // Clear and show backfill
       process.stdout.write(`${ESC}2J${ESC}H`);
@@ -259,20 +259,11 @@ function handleCommand(line) {
     }
 
     case '/rooms': {
-      const counts = getUnreadCountAllRooms(identity.name, identity.projectPath);
-      if (counts.size === 0) {
-        systemMsg('No rooms with unread messages.');
-      } else {
-        const lines = [];
-        for (const [room, count] of counts) {
-          lines.push(`  ${room}: ${count} unread${room === currentRoom ? ' (current)' : ''}`);
-        }
-        systemMsg('Rooms:\n' + lines.join('\n'));
-      }
-      // Always show current room
-      if (!counts.has(currentRoom)) {
-        systemMsg(`  ${currentRoom}: 0 unread (current)`);
-      }
+      const unread = getUnreadCount(identity.name, identity.projectPath, currentRoom);
+      const signals = getCrossRoomSignals(identity.name, identity.projectPath)
+        .filter(s => s.room !== currentRoom);
+      const sigStr = signals.length ? `\n  Cross-room signals: ${signals.map(s => `[${s.room}]`).join(', ')}` : '';
+      systemMsg(`[${currentRoom}]: ${unread} unread (current)${sigStr}`);
       break;
     }
 
@@ -402,7 +393,7 @@ function cleanup() {
 
 function main() {
   // Register agent
-  upsertAgent({ name: identity.name, projectPath: identity.projectPath, rooms: [currentRoom] });
+  upsertAgent({ name: identity.name, projectPath: identity.projectPath, currentRoom });
   initCursorIfNew(identity.name, identity.projectPath, currentRoom);
 
   // Clear screen and draw status bar

@@ -7,7 +7,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { readFileSync, appendFileSync, existsSync } from 'fs';
 import { homedir } from 'os';
-import { upsertAgent, getUnreadCountAllRooms, getUnreadMessages, initCursorIfNew, getDb, projectHash, closeDb, getStaleUnansweredQuestions } from '../lib/db.js';
+import { upsertAgent, getUnreadCount, getUnreadMessages, initCursorIfNew, getCrossRoomSignals, getDb, projectHash, closeDb, getStaleUnansweredQuestions } from '../lib/db.js';
 import { resolveIdentity } from '../lib/identity.js';
 import { parseMetadata } from '../lib/format.js';
 
@@ -96,14 +96,11 @@ try {
   // override /leavechat's intentional offline state. The SessionStart hook
   // (start.js) already spawns chat-watch with setOnline:true, which handles
   // recovery for cascade-killed agents on new sessions.
-  upsertAgent({ name: identity.name, projectPath: identity.projectPath, rooms: identity.rooms, setOnline: false });
-  for (const room of identity.rooms) {
-    initCursorIfNew(identity.name, identity.projectPath, room);
-  }
+  const currentRoom = identity.currentRoom || 'lobby';
+  upsertAgent({ name: identity.name, projectPath: identity.projectPath, currentRoom, setOnline: false });
+  initCursorIfNew(identity.name, identity.projectPath, currentRoom);
 
-  const counts = getUnreadCountAllRooms(identity.name, identity.projectPath);
-  let total = 0;
-  for (const c of counts.values()) total += c;
+  const total = getUnreadCount(identity.name, identity.projectPath, currentRoom);
 
   if (total > 0) {
     const lines = [`CCCHAT: ${total} new message${total !== 1 ? 's' : ''}`];
@@ -111,11 +108,10 @@ try {
     let hasUrgentOrMention = false;
     let hasOtherMessages = false;
 
-    for (const [room, count] of counts) {
-      const messages = getUnreadMessages(identity.name, identity.projectPath, room, 5);
-      // Filter out own messages
-      const filtered = messages.filter(m => m.from_agent !== identity.name);
-      if (filtered.length === 0) continue;
+    // Current-room content preview
+    const messages = getUnreadMessages(identity.name, identity.projectPath, currentRoom, 5);
+    const filtered = messages.filter(m => m.from_agent !== identity.name);
+    if (filtered.length > 0) {
       hasOtherMessages = true;
       const last = filtered[filtered.length - 1];
       const meta = parseMetadata(last.metadata);
@@ -124,7 +120,16 @@ try {
       if (meta.priority === 'urgent') { parts.push('URGENT'); hasUrgentOrMention = true; }
       if (meta.mentions.includes(identity.name)) { parts.push('@you'); hasUrgentOrMention = true; }
       const tag = parts.length ? ` (${parts.join(', ')})` : '';
-      lines.push(`  [${room}] ${last.from_agent}${tag}: ${last.content.slice(0, 120)}`);
+      lines.push(`  [${currentRoom}] ${last.from_agent}${tag}: ${last.content.slice(0, 120)}`);
+    }
+
+    // Option-B: cross-room signals (DM / urgent / @mention) — no content delivery, just alert
+    const signals = getCrossRoomSignals(identity.name, identity.projectPath);
+    for (const s of signals) {
+      if (s.room === currentRoom) continue; // already shown above
+      hasOtherMessages = true;
+      if (s.tags.includes('URGENT') || s.tags.includes('DM') || s.tags.includes('@you')) hasUrgentOrMention = true;
+      lines.push(`  [signal:${s.room}] ${s.from_agent} (${s.tags.join(', ')}): ${s.content.slice(0, 120)}`);
     }
 
     if (!hasOtherMessages) {
@@ -137,24 +142,24 @@ try {
         lines.push('  → Call Skill(skill="ccchat") to read and respond.');
       }
       if (total >= 3) {
-        const firstRoom = [...counts.keys()][0];
-        lines.push(`  → Digest: node ${join(__dirname, '..', 'scripts', 'chat-digest.js')} --room ${firstRoom}`);
+        lines.push(`  → Digest: node ${join(__dirname, '..', 'scripts', 'chat-digest.js')} --room ${currentRoom}`);
       }
       console.error(lines.join('\n'));
 
       // Drop-off tracking: log when questions/@mentions go unread and agent is idle
       if (hasQuestion || hasUrgentOrMention) {
         try {
-          logDropoff(identity, counts, hasQuestion, hasUrgentOrMention);
+          const countsMap = new Map([[currentRoom, total]]);
+          logDropoff(identity, countsMap, hasQuestion, hasUrgentOrMention);
         } catch { /* tracking must never fail the hook */ }
       }
     }
   }
   // Open Questions auto-promotion: flag stale unanswered questions
   const staleQs = [];
-  for (const room of identity.rooms) {
-    const qs = getStaleUnansweredQuestions(room, 15);
-    for (const q of qs) staleQs.push(`  [${room}] #${q.id} ${q.from_agent}: ${q.content.slice(0, 120)}`);
+  {
+    const qs = getStaleUnansweredQuestions(currentRoom, 15);
+    for (const q of qs) staleQs.push(`  [${currentRoom}] #${q.id} ${q.from_agent}: ${q.content.slice(0, 120)}`);
   }
   if (staleQs.length > 0) {
     staleQs.unshift(`CCCHAT OPEN QUESTIONS: ${staleQs.length} unanswered question${staleQs.length !== 1 ? 's' : ''} (>15 min):`);
