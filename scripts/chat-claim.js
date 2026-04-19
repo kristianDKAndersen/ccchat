@@ -23,7 +23,7 @@ function out(obj) {
 }
 
 function postSystemMessage(identity, room, content) {
-  upsertAgent({ name: identity.name, projectPath: identity.projectPath, rooms: [room] });
+  upsertAgent({ name: identity.name, projectPath: identity.projectPath, currentRoom: room });
   initCursorIfNew(identity.name, identity.projectPath, room);
   const result = insertMessage({
     type: 'system',
