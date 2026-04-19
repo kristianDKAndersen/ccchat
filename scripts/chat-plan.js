@@ -7,10 +7,11 @@
 //   node chat-plan.js --show <plan-id>
 //   node chat-plan.js --list [--status active]
 //   node chat-plan.js --complete <plan-id> --name agent
+//   node chat-plan.js --cancel <plan-id> --name agent
 
 import {
   createPlan, getPlan, listPlans, updatePlanStatus,
-  addPlanTask, getPlanTasks, claimTask, closeDb,
+  addPlanTask, getPlanTasks, claimTask, releaseTask, closeDb,
   claimPlanner, releasePlanner, checkPhaseAllowed
 } from '../lib/db.js';
 import { postSystemMessage } from '../lib/system-message.js';
@@ -215,6 +216,29 @@ try {
     out({ ok: true, planId, taskId, owner: identity.name,
       _text: `Quick plan #${planId} created. Task #${taskId} claimed by ${identity.name}: ${title}` });
 
+  } else if (getFlag('cancel')) {
+    const planId = parseInt(getFlag('cancel'), 10);
+    const plan = getPlan(planId);
+    if (!plan) { console.error(`Plan #${planId} not found`); process.exit(1); }
+    if (plan.status === 'abandoned' || plan.status === 'completed') {
+      console.error(`Plan #${planId} is already ${plan.status}`); process.exit(1);
+    }
+
+    // Release any in_progress tasks before cancelling
+    const tasks = getPlanTasks(planId);
+    const active = tasks.filter(t => t.status === 'in_progress' && t.owner);
+    for (const t of active) {
+      releaseTask(t.id, t.owner);
+    }
+
+    const identity = resolveIdentity({ name: getFlag('name'), project: getFlag('project') });
+    updatePlanStatus(planId, 'abandoned');
+    postSystemMessage(identity, plan.room,
+      `${identity.name} abandoned plan #${planId}: ${plan.title}${active.length ? ` (${active.length} in-progress task(s) released)` : ''}`);
+
+    out({ ok: true, id: planId, status: 'abandoned', tasksReleased: active.length,
+      _text: `Abandoned plan #${planId}: ${plan.title}` + (active.length ? ` (${active.length} task(s) released)` : '') });
+
     } else {
     console.error(`Usage:
   chat-plan.js --create --title '<title>' --room <room> --name <agent> [--source <msg-id>]
@@ -223,7 +247,8 @@ try {
   chat-plan.js --show <plan-id>
   chat-plan.js --list [--status active] [--room <room>]
   chat-plan.js --complete <plan-id> --name <agent>
-  chat-plan.js --quick '<title>' --room <room> --name <agent>`);
+  chat-plan.js --quick '<title>' --room <room> --name <agent>
+  chat-plan.js --cancel <plan-id> --name <agent>`);
     process.exit(1);
   }
 } finally {

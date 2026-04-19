@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Post a question and poll for replies.
-// Usage: node chat-ask.js --name <agent> --project <path> --question "<text>" [--room general] [--timeout 120]
+// Usage: node chat-ask.js --name <agent> --project <path> --question "<text>" [--room general] [--timeout 120] [--json]
 
 import { upsertAgent, insertMessage, getMessagesSince, getThreadReplies, getOnlineAgents, projectHash, initCursorIfNew, closeDb } from '../lib/db.js';
 import { resolveIdentity } from '../lib/identity.js';
@@ -18,15 +18,15 @@ const question = getFlag('question');
 const room = getFlag('room') || 'general';
 const timeout = parseInt(getFlag('timeout') || '120', 10);
 const urgent = args.includes('--urgent');
-const pretty = args.includes('--pretty');
+const jsonOut = args.includes('--json');
 
 if (!question) {
-  console.error('Usage: node chat-ask.js --question "<text>" [--name agent] [--project path] [--room room] [--timeout 120]');
+  console.error('Usage: node chat-ask.js --question "<text>" [--name agent] [--project path] [--room room] [--timeout 120] [--json]');
   process.exit(1);
 }
 
 async function main() {
-  upsertAgent({ name: identity.name, projectPath: identity.projectPath, rooms: [room] });
+  upsertAgent({ name: identity.name, projectPath: identity.projectPath, currentRoom: room });
   initCursorIfNew(identity.name, identity.projectPath, room);
 
   // Post question
@@ -48,8 +48,7 @@ async function main() {
     const agents = getOnlineAgents();
     for (const a of agents) {
       if (a.name === identity.name && a.project_hash === projectHash(identity.projectPath)) continue;
-      const rooms = JSON.parse(a.rooms || '[]');
-      if (!rooms.includes(room)) continue;
+      if (a.current_room !== room) continue;
       touchSentinel(a.project_hash, a.name);
     }
   } catch {
@@ -108,7 +107,7 @@ async function main() {
 
   closeDb();
 
-  if (pretty) {
+  if (!jsonOut) {
     console.log(formatSendConfirm(Number(questionId), room) + ' (question)');
     if (responses.length === 0) {
       console.log('No replies received.');
@@ -127,10 +126,6 @@ async function main() {
     }, null, 2));
   }
 
-  // Exit with code 1 if timeout with no responses
-  if (responses.length === 0) {
-    process.exitCode = 1;
-  }
 }
 
 main().catch(e => { console.error(e.message); closeDb(); process.exit(1); });
