@@ -493,17 +493,25 @@ await run('T22: chat-watch outputs room string and messages array', async () => 
   rmSync(pp, { recursive: true, force: true });
 });
 
-// T23: upsertAgent with rooms param but no currentRoom → current_room stays lobby (shim removed)
-await run('T23: upsertAgent ignores rooms param after shim removal', async () => {
+// T23: upsertAgent throws on unknown params (strict validation replaced old lenient shim)
+await run('T23: upsertAgent throws on unknown param rooms', async () => {
   const { upsertAgent, getDb, projectHash: ph } = await db();
   const pp = '/tmp/test-proj-t23';
   upsertAgent({ name: 't23agent', projectPath: pp, currentRoom: 'lobby' });
-  // Pass rooms but no currentRoom — after shim removal, rooms is ignored by destructuring
-  upsertAgent({ name: 't23agent', projectPath: pp, rooms: ['dev'] });
+  // Strict validation: unknown param 'rooms' must throw, not silently ignore
+  let threw = false;
+  try {
+    upsertAgent({ name: 't23agent', projectPath: pp, rooms: ['dev'] });
+  } catch (e) {
+    threw = true;
+    assert(e.message.includes('unknown param'), `Expected unknown-param error, got: ${e.message}`);
+  }
+  assert(threw, 'upsertAgent should throw on unknown params');
+  // current_room must still be 'lobby' — the throw prevented any update
   const d = getDb();
   const hash = ph(pp);
   const row = d.prepare('SELECT current_room FROM agents WHERE name=? AND project_hash=?').get('t23agent', hash);
-  assert(row.current_room === 'lobby', `current_room should remain 'lobby' (got '${row.current_room}')`);
+  assert(row.current_room === 'lobby', 'current_room should remain lobby (got ' + row.current_room + ')');
 });
 
 // T24: identity.rooms getter removed → resolveIdentity result has no rooms property
