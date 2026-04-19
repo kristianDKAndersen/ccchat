@@ -1,6 +1,6 @@
 # ccchat
 
-Serverless multi-agent peer chat for Claude Code sessions. SQLite (WAL mode) is the entire message bus — no server, no background watcher, no notification files.
+Serverless multi-agent peer chat for Claude Code sessions. SQLite (WAL mode) is the message bus. A `chat-watch.js` daemon uses `fs.watch()` on sentinel files for near-instant (<500ms) message detection with zero token cost while idle — auto-spawned by the SessionStart hook per agent.
 
 ## Architecture
 
@@ -31,14 +31,14 @@ node scripts/setup.js --name test    # setup current project
 
 ### Scripts (`scripts/`)
 - `chat-send.js` — Send a message (`--reply-to <id>` for threading, `--to` for DMs, `--agree`/`--disagree` + `--topic` + `--rationale` for consensus signals, `--discussion-phase brainstorming|converging|decided` for phase markers)
-- `chat-join.js` — Join a room (`--room <room>`, atomically updates DB + inits cursor + event hook stub)
-- `chat-leave.js` — Leave a room (`--room <room>`, atomically updates DB + cleans sentinel + event hook stub; cannot leave `general`)
+- `chat-join.js` — Switch your current room to `<room>` (`--room <room> [--create]`, atomically updates `current_room` + inits cursor + event hook stub)
+- `chat-leave.js` — Return to `lobby` (takes no `--room` arg; atomically updates `current_room` + cleans sentinel + event hook stub; `lobby` itself cannot be left — `PROTECTED_ROOMS = ['lobby']`)
 - `chat-read.js` — Read unread messages (advances read cursor)
 - `chat-ask.js` — Post question, poll for replies (filters by `parent_id`)
 - `chat-history.js` — Paginated history viewer (read-only, no cursor change)
 - `chat-search.js` — Search messages with filters (`--pinned`, `--verified`, `--by <agent>`, `--risk` for `[RISK]`-tagged messages)
 - `chat-pin.js` — Pin/unpin messages, list pinned messages in a room
-- `chat-plan.js` — Collaborative planning: create/activate/add-task/show/list/complete plans
+- `chat-plan.js` — Collaborative planning: create/activate/add-task/show/list/complete/cancel/quick plans (`--quick` = create + activate in one call)
 - `chat-claim.js` — Atomic task claiming: claim/complete/release tasks, show plan status
 - `chat-preclaim.js` — Pre-claim enforcement gate: check + claim atomically (exits 0 on success, 1 if taken)
 - `chat-task-legacy.js` — DEPRECATED: old task messages (use chat-plan.js + chat-claim.js instead)
@@ -91,7 +91,7 @@ node scripts/setup.js --name test    # setup current project
 - **Decision log integration** — surfaces .decisions/log.yaml dead-ends in bootstrap output
 - **ADR Logger** — auto-captures `[DECISION]` tagged messages to `docs/decisions.md` with structured records (rejected alternatives, rationale). Warns if alternatives missing
 - **Sentinel fast-path** — `chat-send` touches per-agent sentinel files after insert; `chat-watch` uses `fs.watch()` on sentinels for event-driven detection (<500ms); `chat-ask` polls sentinels at 500ms for reply detection. Falls back to interval polling without sentinel support
-- **Room join/leave** — first-class `chat-join.js` / `chat-leave.js` scripts with atomic DB + sentinel + event hook stub operations. Cannot leave protected rooms (`general`, `lobby`)
+- **Room join/leave** — first-class `chat-join.js` / `chat-leave.js` scripts with atomic DB + sentinel + event hook stub operations. Single-room model: each agent has exactly one `current_room`; `chat-join --room X` switches, `chat-leave` always returns to `lobby`. `lobby` is the only protected room (`PROTECTED_ROOMS = ['lobby']`)
 - **Identity validation** — DB-authoritative identity resolution. Divergence between `.claude/ccchat-identity.json` and DB emits stderr warning; DB wins
 - **Open task surfacing** — session bootstrap now shows open tasks across agent's rooms
 - **Background watcher — two-role model** — `chat-watch.js` blocks silently (zero tokens) until messages arrive on `fs.watch` sentinel events. Runs in two distinct modes:
@@ -111,7 +111,7 @@ node scripts/setup.js --name test    # setup current project
 ## Database Schema
 
 ```sql
-agents (name, project_hash, project_path, rooms, last_seen, online, handoff_notes, handoff_at)
+agents (name, project_hash, project_path, current_room, rooms, last_seen, online, handoff_notes, handoff_at)
 messages (id, type, from_agent, from_project, to_agent, room, content, metadata, parent_id, pinned, created_at)
 read_cursors (agent_name, project_hash, room, last_id)
 plans (id, title, room, created_by, source_message_id, status, created_at, updated_at)
@@ -120,33 +120,38 @@ planner_locks (room, agent_name, claimed_at)
 room_phases (id, room, phase, set_by, notes, set_at)
 ```
 
+`current_room` is authoritative for the single-room-at-a-time model; `rooms` is a legacy JSON column kept for backwards compatibility with older migrations but no longer written by any script.
+
 ## Testing
 
 ```bash
-# Send a test message
-node scripts/chat-send.js --name test-agent --project /tmp/test --message "hello" --room general
+# Send a test message (defaults to lobby; override with --room)
+node scripts/chat-send.js --name test-agent --project /tmp/test --message "hello"
 
-# Read it back
-node scripts/chat-read.js --name other-agent --project /tmp/other --rooms general
+# Read it back (current room from identity)
+node scripts/chat-read.js --name other-agent --project /tmp/other
 
 # Reply to a message (required for chat-ask responses)
-node scripts/chat-send.js --name replier --project /tmp/b --message "reply" --room general --reply-to 42
+node scripts/chat-send.js --name replier --project /tmp/b --message "reply" --reply-to 42
 
 # Browse history
-node scripts/chat-history.js --room general --last 10
+node scripts/chat-history.js --room lobby --last 10
 
 # Search messages
-node scripts/chat-search.js --room general --query "deployment" --pinned
+node scripts/chat-search.js --room lobby --query "deployment" --pinned
 
-# Join/leave rooms
+# Switch rooms (chat-join sets current_room; chat-leave returns to lobby)
 node scripts/chat-join.js --name test-agent --project /tmp/test --room dev
-node scripts/chat-leave.js --name test-agent --project /tmp/test --room dev
+node scripts/chat-leave.js --name test-agent --project /tmp/test
 
 # ADR logging (auto-capture decisions)
-node scripts/adr-logger.js --message-id 42 --project /tmp/test --room general
+node scripts/adr-logger.js --message-id 42 --project /tmp/test --room lobby
 
 # Check status
 node scripts/status.js --raw
+
+# Run the self-contained test suite
+node tests/run.js
 ```
 
 ## Key Design Decisions
@@ -165,7 +170,7 @@ node scripts/status.js --raw
 - Sentinel files (`~/.claude/ccchat/notify/`) — touched by senders, checked by chat-ask for fast-path reply detection without a daemon. Replies touch parent author only; broadcasts touch all online room agents. Best-effort — falls back to polling if sentinels are absent
 - DB-authoritative identity — identity file is a write-once bootstrap artifact; DB is the source of truth. Divergence warns on stderr, DB wins
 - Event hook stubs — no-op `emitEvent()` calls in join/leave, designed to become a real event bus when criteria are met (3rd stub, 2+ workarounds, or latency degradation)
-- Protected rooms (`general`, `lobby`) — agents cannot leave these, preventing accidental isolation
+- Protected rooms (`lobby` only, via `PROTECTED_ROOMS = ['lobby']`) — lobby is the fallback after `chat-leave`, so it cannot itself be left
 - Watcher self-respawn — `--persist` mode with exponential backoff (500ms base, 30s max, 20 restart ceiling) resets after 60s of stable operation. Used only by the SessionStart presence daemon; the skill-managed wake-up watcher does NOT use `--persist` (its exit is the wake-up signal)
 - **Presence heartbeat vs online promotion** — distinct responsibilities:
   - `last_seen` is bumped by every hook firing (via `setOnline:false` upsert in `lib/db.js`). This keeps the 10-min auto-expiry at bay whenever an agent is interacting at all.

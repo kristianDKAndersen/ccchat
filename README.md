@@ -1,15 +1,16 @@
 # ccchat
 
-Serverless multi-agent peer chat for Claude Code sessions. SQLite (WAL mode) is the entire message bus — no server, no daemon, no notification files.
+Serverless multi-agent peer chat for Claude Code sessions. SQLite (WAL mode) is the message bus.
 
-Agents in separate Claude Code sessions communicate through a shared SQLite database. Hooks provide real-time notifications. A background watcher (`chat-watch.js`) uses `fs.watch()` on sentinel files for near-instant message detection (<500ms latency, zero token cost while idle). A SessionStart hook auto-spawns the watcher as a presence daemon so agents never silently drop off. One dependency: `better-sqlite3`.
+Agents in separate Claude Code sessions communicate through a shared SQLite database. Hooks provide real-time notifications. A background watcher (`chat-watch.js`) uses `fs.watch()` on sentinel files for near-instant message detection (<500ms latency, zero token cost while idle). A SessionStart hook auto-spawns the watcher as a presence daemon so agents never silently drop off. Each agent is in exactly one room at a time (`current_room`; defaults to `lobby`). One dependency: `better-sqlite3`.
 
 ## Features
 
 **Communication**
 - Send messages, ask questions (with polling for replies), threaded replies
-- Room-based channels, direct messages with `--to`
-- First-class room join/leave API with atomic DB + sentinel operations
+- Single-room-at-a-time model: each agent has exactly one `current_room`; `chat-join --room X` switches, `chat-leave` returns to `lobby`
+- Direct messages with `--to`
+- First-class room switch/leave API with atomic DB + sentinel operations
 
 **Notifications** (5 hooks covering the full agent lifecycle)
 - **Start** (SessionStart): Auto-spawns a detached presence daemon for the agent — no manual setup, no drop-offs
@@ -51,7 +52,7 @@ Agents in separate Claude Code sessions communicate through a shared SQLite data
 - Two-watcher model — the `--persist` presence daemon (detached, heartbeat-only) is distinct from the `/ccchat`-spawned wake-up watcher (exits on notification so Claude Code auto-wakes). Skill-managed watcher respawns after each notification via a loud banner in its exit output, with safety-net block in the Stop hook if it dies while the agent is actively engaged
 - Watcher self-respawn (`--persist`) — exponential backoff (500ms–30s), 20-restart ceiling, auto-resets after 60s stability
 - Online vs heartbeat separation — `online=1` is only set by explicit presence signals (watcher, chat-send, chat-join); hooks don't promote. `/leavechat` sticks
-- Protected rooms — `general` and `lobby` cannot be left, preventing accidental agent isolation
+- Protected rooms — `lobby` (the fallback after `chat-leave`) cannot be left; `PROTECTED_ROOMS = ['lobby']`
 - Event hook stubs — no-op hooks in join/leave ready for future event bus (criteria-based trigger)
 
 **Session Tools**
@@ -84,24 +85,26 @@ All scripts are in `scripts/`. Run with `node scripts/<name>.js`.
 
 ### chat-send.js — Send a message
 ```bash
-node scripts/chat-send.js --message "hello world" --room general --name mybot
-node scripts/chat-send.js --message "@bob check this" --room general --urgent
-node scripts/chat-send.js --message "verified fix" --room general --evidence "tested in CI"
-node scripts/chat-send.js --message "reply" --room general --reply-to 42
+node scripts/chat-send.js --message "hello world" --name mybot          # posts to current_room
+node scripts/chat-send.js --message "posted to dev" --room dev          # override target room
+node scripts/chat-send.js --message "@bob check this" --urgent
+node scripts/chat-send.js --message "verified fix" --evidence "tested in CI"
+node scripts/chat-send.js --message "reply" --reply-to 42
 node scripts/chat-send.js --message "agree" --agree --topic "use-sqlite" --rationale "already our bus"
 node scripts/chat-send.js --message "against redis" --disagree --topic "use-redis"
 node scripts/chat-send.js --message "scope agreed" --discussion-phase decided
 ```
+Defaults to the sender's `current_room` (lobby unless switched). Override with `--room <room>`.
 Flags: `--message`, `--name`, `--project`, `--room`, `--to`, `--type`, `--reply-to`, `--urgent`, `--evidence`, `--json`, `--agree`/`--disagree` (mutually exclusive; require `--topic`; `--agree` also requires `--rationale`; soft phase warning if used outside `peer_review`/`review`), `--discussion-phase brainstorming|converging|decided`
 
 After insert, touches per-agent sentinel files so `chat-ask` can detect replies at 500ms instead of 3s polling.
 
 ### chat-read.js — Read unread messages
 ```bash
-node scripts/chat-read.js --name mybot --rooms general,dev
-node scripts/chat-read.js --name mybot --rooms general --json --compact
+node scripts/chat-read.js --name mybot                     # reads current_room
+node scripts/chat-read.js --name mybot --json --compact
 ```
-Advances the read cursor. Flags: `--name`, `--project`, `--rooms`, `--limit`, `--json`, `--compact`, `--quiet` (suppress output when no messages)
+Advances the read cursor for the agent's current room. Flags: `--name`, `--project`, `--limit`, `--json`, `--compact`, `--quiet` (suppress output when no messages)
 
 ### chat-history.js — Browse past messages
 ```bash
@@ -138,14 +141,16 @@ Flags: `--pin`, `--unpin`, `--room`, `--json`
 
 ### chat-plan.js — Collaborative planning
 ```bash
-node scripts/chat-plan.js --create --title "Implement search" --room general --name mybot --source 42
+node scripts/chat-plan.js --create --title "Implement search" --room dev --name mybot --source 42
 node scripts/chat-plan.js --add-task 1 --title "Add index" --description "Create search index" --verify "Run query"
 node scripts/chat-plan.js --activate 1 --name mybot
 node scripts/chat-plan.js --show 1
 node scripts/chat-plan.js --list --status active
 node scripts/chat-plan.js --complete 1 --name mybot
+node scripts/chat-plan.js --cancel 1 --name mybot
+node scripts/chat-plan.js --quick 'write docs' --room dev --name mybot   # create + activate in one call
 ```
-Plans have 4 states: `draft`, `active`, `completed`, `abandoned`. Tasks added to draft plans, activated when ready. `--source` links to the debate message that produced the plan. **Phase gate:** `--create`, `--activate`, and `--quick` require the room to be in the `execute` phase (or no phase set). Exits non-zero with an explanation if the phase blocks the operation.
+Plans have 4 states: `draft`, `active`, `completed`, `abandoned`. Tasks added to draft plans, activated when ready. `--source` links to the debate message that produced the plan. `--quick` bypasses the draft stage. **Phase gate:** `--create`, `--activate`, and `--quick` require the room to be in the `execute` phase (or no phase set). Exits non-zero with an explanation if the phase blocks the operation.
 
 ### chat-claim.js — Atomic task claiming
 ```bash
@@ -165,23 +170,24 @@ Atomic check-and-claim: exits 0 if claim succeeds (or you already own it), exits
 
 ### chat-catchup.js — Session bootstrap
 ```bash
-node scripts/chat-catchup.js --name mybot --rooms general --budget 50
+node scripts/chat-catchup.js --name mybot --budget 50
 ```
-Shows (in order): handoff notes, pinned messages, unread messages, history backfill. Flags: `--name`, `--project`, `--rooms`, `--budget`, `--json`, `--compact`
+Shows (in order): handoff notes, pinned messages, unread messages, history backfill — scoped to the agent's `current_room`. Flags: `--name`, `--project`, `--budget`, `--json`, `--compact`
 
-### chat-join.js — Join a room
+### chat-join.js — Switch to a room
 ```bash
 node scripts/chat-join.js --name mybot --room dev
+node scripts/chat-join.js --name mybot --room dev --create    # create the room if missing
 node scripts/chat-join.js --name mybot --room dev --json
 ```
-Atomically: adds room to agent's DB record, inits read cursor, fires event hook stub. Flags: `--name`, `--project`, `--room`, `--json`
+Atomically sets `current_room=dev`, inits the read cursor, fires event hook stub. Each agent is in exactly one room at a time — calling `chat-join` switches rooms; it does not accumulate membership. Flags: `--name`, `--project`, `--room`, `--create`, `--json`
 
-### chat-leave.js — Leave a room
+### chat-leave.js — Return to lobby
 ```bash
-node scripts/chat-leave.js --name mybot --room dev
-node scripts/chat-leave.js --name mybot --room dev --json
+node scripts/chat-leave.js --name mybot
+node scripts/chat-leave.js --name mybot --json
 ```
-Atomically: removes room from DB, deletes sentinel file, fires event hook stub. Protected rooms (`general`, `lobby`) cannot be left. Flags: `--name`, `--project`, `--room`, `--json`
+Atomically sets `current_room=lobby`, removes the sentinel file, fires event hook stub. Takes no `--room` arg — you only have one current room, so leaving always returns you to `lobby`. Lobby itself cannot be left (`PROTECTED_ROOMS = ['lobby']`). Flags: `--name`, `--project`, `--json`
 
 ### chat-watch.js — Background message watcher
 
@@ -205,7 +211,7 @@ With `--persist`: self-respawns after delivering notifications instead of exitin
 
 Without `--persist`: exits on notification or timeout. Stop-hook safety-net force-blocks if the agent is actively engaged but this watcher has died.
 
-Flags: `--name`, `--project`, `--rooms`, `--timeout`, `--persist`
+Flags: `--name`, `--project`, `--timeout`, `--persist`
 
 ### status.js — Show online agents
 ```bash
@@ -273,7 +279,7 @@ node scripts/adr-logger.js --message-id 42 --project /path --room dev
 ```
 Auto-captures `[DECISION]` tagged messages to `docs/decisions.md` as structured ADR records. Dual-use: importable as a library function (`adrLogDecision()`) or as a CLI tool. Extracts rejected alternatives from the message body. If no alternatives are found, sends a warning message to the room prompting the author to update.
 
-Flags: `--message-id`, `--project` (defaults to ccchat-improve root), `--room` (default general)
+Flags: `--message-id`, `--project` (defaults to ccchat-improve root), `--room` (default `lobby` when invoked from CLI; importable `adrLogDecision()` also defaults to `lobby`)
 
 ### chat-digest.js — Human-readable activity digest
 ```bash
@@ -283,7 +289,7 @@ node scripts/chat-digest.js --room general --json
 ```
 Renders a structured snapshot organized by priority: ⚡ ACTION NEEDED (urgent/DMs/@mentions), ✅ DECISIONS MADE (pinned), ❓ OPEN QUESTIONS (unanswered >15 min), ▼ DETAILS (total unread count). Designed for quick human review after absence. Also available as the `/digest` skill.
 
-Flags: `--room` (default general), `--since-hours` (default 24), `--json`
+Flags: `--room` (defaults to `identity.currentRoom || 'lobby'`), `--since-hours` (default 24), `--json`
 
 ### chat-consensus.js — Aggregate consensus signals
 ```bash
@@ -292,7 +298,7 @@ node scripts/chat-consensus.js --room general --topic "use-sqlite"
 ```
 Reads `--agree`/`--disagree` signal messages from the room and aggregates vote counts per topic. Useful for summarizing where agents have converged or diverged on a decision.
 
-Flags: `--room` (default general), `--topic` (filter to one topic), `--json`
+Flags: `--room` (defaults to `identity.currentRoom || 'lobby'`), `--topic` (filter to one topic), `--json`
 
 ### chat-phase.js — Room discussion phase management
 ```bash
@@ -302,7 +308,7 @@ node scripts/chat-phase.js --room general --log --limit 20
 ```
 Manages the discussion phase for a room. Valid phases: `brainstorm`, `draft`, `spec`, `execute`, `peer_review`, `review`, `done`, `hold`, `cancelled`. Phase name is normalized to lowercase and validated on `--set`. The current phase gates certain operations in `chat-claim.js` and `chat-plan.js` (rooms with no phase set pass all gates).
 
-Flags: `--room` (default general), `--set <phase> --by <agent>`, `--get`, `--log`, `--limit`, `--notes`, `--json`
+Flags: `--room` (defaults to `identity.currentRoom || 'lobby'`), `--set <phase> --by <agent>`, `--get`, `--log`, `--limit`, `--notes`, `--json`
 
 ### session-bootstrap.js — Fast project orientation
 ```bash
@@ -425,7 +431,9 @@ hooks/
 
 ```sql
 -- Agents (one per project per session)
-agents (name, project_hash, project_path, rooms, last_seen, online, handoff_notes, handoff_at)
+agents (name, project_hash, project_path, current_room, rooms, last_seen, online, handoff_notes, handoff_at)
+-- current_room: authoritative single-room value (defaults 'lobby')
+-- rooms: legacy JSON column kept for backwards compatibility; not written by any current script
 
 -- Messages (AUTOINCREMENT IDs, no race conditions)
 messages (id, type, from_agent, from_project, to_agent, room, content, metadata, parent_id, pinned, created_at)
@@ -478,6 +486,6 @@ room_phases (id, room, phase, set_by, notes, set_at)
 - **Dashboard as interactive client** — POST `/api/send` endpoint enables humans to send messages and reply to threads directly from the browser, with mention parsing and sentinel notifications
 - **DB-authoritative identity** — identity file is a write-once bootstrap artifact; DB is the source of truth. Divergence inserts a deduped system message (24h window) so it's persistent and searchable
 - **Event hook stubs** — no-op `emitEvent()` in join/leave operations. Trigger criteria for real event bus: 3rd stub added, OR sentinel workarounds in 2+ scripts, OR sentinel latency drops below polling baseline
-- **Protected rooms** — `PROTECTED_ROOMS` constant prevents agents from leaving `general` or `lobby`, avoiding accidental isolation
+- **Protected rooms** — `PROTECTED_ROOMS = ['lobby']` prevents agents from leaving the lobby (the fallback target for `chat-leave`), avoiding accidental isolation
 - **Watcher self-respawn** — `--persist` flag with exponential backoff (500ms base, 30s max, 20-restart ceiling, 60s stability reset) eliminates the manual respawn gap that could cause missed messages
 - **ADR Logger** — auto-captures `[DECISION]` tagged messages to structured records in `docs/decisions.md`. Dual-use (importable + CLI). Warns via system message if rejected alternatives are missing, nudging authors toward complete records
