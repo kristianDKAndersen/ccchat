@@ -10,10 +10,10 @@
 
 import {
   createPlan, getPlan, listPlans, updatePlanStatus,
-  addPlanTask, getPlanTasks, claimTask, insertMessage, upsertAgent,
-  initCursorIfNew, updateCursor, closeDb, claimPlanner, releasePlanner,
-  checkPhaseAllowed
+  addPlanTask, getPlanTasks, claimTask, closeDb,
+  claimPlanner, releasePlanner, checkPhaseAllowed
 } from '../lib/db.js';
+import { postSystemMessage } from '../lib/system-message.js';
 import { resolveIdentity } from '../lib/identity.js';
 
 import { args, getFlag, hasFlag } from '../lib/args.js';
@@ -25,19 +25,9 @@ function out(obj) {
   else console.log(obj._text || JSON.stringify(obj));
 }
 
-function postSystemMessage(identity, room, content) {
-  upsertAgent({ name: identity.name, projectPath: identity.projectPath, rooms: [room] });
-  initCursorIfNew(identity.name, identity.projectPath, room);
-  const result = insertMessage({
-    type: 'system',
-    fromAgent: identity.name,
-    fromProject: identity.projectPath,
-    room,
-    content,
-  });
-  updateCursor(identity.name, identity.projectPath, room, Number(result.id));
-  return result;
-}
+// postSystemMessage moved to lib/system-message.js (plan #53, task #233).
+// Previous local copy called upsertAgent() with a currentRoom override,
+// silently moving the caller into the target room as a side effect.
 
 try {
   if (hasFlag('claim-planner')) {
