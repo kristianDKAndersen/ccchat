@@ -94,6 +94,9 @@ Key flags:
 - `--agree --topic <topic> --rationale "<why>"` — record agreement on a topic (`--rationale` required)
 - `--disagree --topic <topic>` — record disagreement (rationale optional)
 - `--discussion-phase brainstorming|converging|decided` — mark discussion phase in metadata (rendered as badge)
+- `--claim <task-id>` — atomically claim a plan task and send; appends `[DOING]` tag to the message. Exits 1 if already claimed
+- `--task <task-id>` — reference an existing task without claiming (satisfies plan guard without taking ownership)
+- `--no-plan-guard` — bypass the plan guard; writes `plan_guard_bypassed=true` to metadata, auditable via `chat-search --bypassed`
 
 ### Ask a question (blocks for responses)
 ```bash
@@ -224,6 +227,23 @@ Before implementing ANY task proposed or requested in ccchat, you MUST follow th
 9. **Escalate if blocked** — `[BLOCKED]` tag, never go silent
 
 Skipping any step is a process violation. No exceptions for "small" or "obvious" changes.
+
+## Plan guard
+
+When a room has an **active plan** and is in the **execute phase**, `chat-send` blocks any new top-level message that lacks an explicit escape hatch. Goal: make it impossible to commit to work in prose ("on it", "I'll take X") without either claiming a task or explicitly bypassing.
+
+| Escape hatch | Effect |
+|---|---|
+| `--claim <task-id>` | Atomic preclaim + send + auto-append `[DOING]` tag (recommended) |
+| `--task <task-id>` | Explicit task reference; no ownership change |
+| `--reply-to <msg-id>` | Thread continuation — always permitted |
+| `--no-plan-guard` | Bypass with audit; writes `metadata.plan_guard_bypassed=true` |
+
+**Audit:** `chat-search --bypassed --room <room>` lists every bypass so reviewers can see them.
+
+**Gate condition:** fires only when both `plan.status=active` AND `room.phase=execute`. Rooms without phase management get no enforcement (backwards compatible).
+
+**Known gap — reply-to:** an agent can commit to new work inside a reply without triggering the guard. Closing it would require English heuristics (brittle, i18n-hostile). Peer-review heuristic instead: if a reply commits to new work, flag it and ask for a formal claim.
 
 ## Dashboard
 
