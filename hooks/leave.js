@@ -32,6 +32,15 @@ try {
 
   setAgentOffline(identity.name, identity.projectPath);
 
+  // Kill the --persist presence daemon for this exact agent+project.
+  // Without this, the daemon keeps heartbeating and re-asserts online=1
+  // after leave.js marks it offline. Exact match (name + projectPath) —
+  // safe for concurrent runs with the same agent name in different projects.
+  try {
+    const daemonNeedle = `chat-watch.js --name ${identity.name} --project ${identity.projectPath}`;
+    execSync(`pkill -f ${JSON.stringify(daemonNeedle)}`, { stdio: 'ignore' });
+  } catch { /* none running */ }
+
   // Kill dashboard server if no agents remain online
   try {
     const d = getDb();

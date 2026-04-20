@@ -62,15 +62,6 @@ async function main() {
     return; // already running
   } catch { /* not running — proceed */ }
 
-  // Kill stale --persist daemons for the same agent name from old project paths.
-  // These accumulate when a project (e.g. an advisor run workspace) ends without
-  // explicitly stopping the daemon. We evict any orphan before spawning a fresh one.
-  // Safe: we only reach here if the exact --name+--project match is NOT running.
-  try {
-    const stalePattern = `chat-watch.js --name ${identity.name} --project`;
-    execSync(`pkill -f ${JSON.stringify(stalePattern)}`, { stdio: 'ignore' });
-  } catch { /* none to kill — proceed */ }
-
   try {
     const watchPath = join(CCCHAT_ROOT, 'scripts', 'chat-watch.js');
     const child = spawn('node', [
