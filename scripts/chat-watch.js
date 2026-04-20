@@ -8,7 +8,7 @@
 // Usage: node chat-watch.js --name <agent> [--room general] [--timeout 300] [--persist]
 
 import { watch, statSync } from 'fs';
-import { upsertAgent, getUnreadMessages, initCursorIfNew, getCrossRoomSignals, closeDb } from '../lib/db.js';
+import { upsertAgent, setAgentOffline, getUnreadMessages, initCursorIfNew, getCrossRoomSignals, closeDb } from '../lib/db.js';
 import { resolveIdentity } from '../lib/identity.js';
 import { sentinelPath, sentinelDir, touchSentinel } from '../lib/sentinel.js';
 import { parseMetadata } from '../lib/format.js';
@@ -19,6 +19,33 @@ const identity = resolveIdentity({ name: getFlag('name'), project: getFlag('proj
 const room = getFlag('room') || identity.currentRoom || 'lobby';
 const timeout = parseInt(getFlag('timeout') || '300', 10) * 1000;
 const persist = args.includes('--persist');
+
+// --parent-pid N: the owning Claude Code session PID. When set, the watcher
+// polls `process.kill(pid, 0)` and self-terminates on ESRCH (parent dead).
+// Without this, a --persist daemon outlives its parent session, keeps
+// heartbeating setOnline:true, and the 10-min DB TTL never fires (last_seen
+// refreshes every cycle). Set by hooks/start.js before spawning.
+const parentPid = parseInt(getFlag('parent-pid') || '0', 10) || null;
+const PARENT_CHECK_INTERVAL_MS = 30000;
+
+function parentAlive() {
+  if (!parentPid) return true; // no parent tracking requested — assume alive
+  try {
+    process.kill(parentPid, 0); // signal 0 = liveness probe, doesn't actually send
+    return true;
+  } catch (e) {
+    if (e.code === 'ESRCH') return false; // no such process
+    if (e.code === 'EPERM') return true;   // process exists but we can't signal it (ok)
+    return true; // unknown error — fail-open, let TTL handle it
+  }
+}
+
+function exitOrphan() {
+  try { setAgentOffline(identity.name, identity.projectPath); } catch {}
+  process.stderr.write(`chat-watch: parent PID ${parentPid} is dead — self-terminating (orphan daemon).\n`);
+  closeDb();
+  process.exit(0);
+}
 
 // --- Self-respawn state (--persist mode) ---
 const MAX_RESTARTS = 20;
@@ -33,6 +60,10 @@ function getMaxIdFromResult(result) {
 }
 
 function runWatchCycle() {
+  // Parent-PID gate: if the owning Claude session is already dead before we
+  // even heartbeat, don't re-assert online=1. Exit cleanly.
+  if (!parentAlive()) { exitOrphan(); return; }
+
   // chat-watch running = agent is actively listening. setOnline:true makes
   // presence strong: the daemon heartbeats every cycle (5 min default) and
   // keeps the agent online even when their Claude session is idle between
@@ -127,6 +158,7 @@ function runWatchCycle() {
   // --- Cleanup ---
   let fsWatcher = null;
   let fallbackInterval = null;
+  let parentCheckInterval = null;
   let timeoutTimer = null;
   let cycleExiting = false;
 
@@ -135,6 +167,7 @@ function runWatchCycle() {
     cycleExiting = true;
     if (fsWatcher) { try { fsWatcher.close(); } catch {} }
     if (fallbackInterval) clearInterval(fallbackInterval);
+    if (parentCheckInterval) clearInterval(parentCheckInterval);
     if (timeoutTimer) clearTimeout(timeoutTimer);
   }
 
@@ -185,6 +218,14 @@ function runWatchCycle() {
   // --- Fallback DB poll (covers missed fs.watch events) ---
   const FALLBACK_MS = fsWatcher ? 30000 : 5000;
   fallbackInterval = setInterval(onTrigger, FALLBACK_MS);
+
+  // --- Parent liveness poll (self-cull orphan daemons) ---
+  if (parentPid) {
+    parentCheckInterval = setInterval(() => {
+      if (cycleExiting) return;
+      if (!parentAlive()) { cleanup(); exitOrphan(); }
+    }, PARENT_CHECK_INTERVAL_MS);
+  }
 
   // --- Timeout ---
   timeoutTimer = setTimeout(exitOnTimeout, timeout);

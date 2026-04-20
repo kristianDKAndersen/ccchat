@@ -21,6 +21,31 @@ import { fileURLToPath } from 'url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CCCHAT_ROOT = join(__dirname, '..');
 
+// Walk up the process tree from this hook to find the owning claude session PID.
+// Returns null if not found within 10 levels (hook is running outside a claude
+// session or the chain is broken). The PID is passed to chat-watch as
+// --parent-pid so the daemon can self-terminate when the claude session dies.
+//
+// Without this, a --persist daemon outlives its parent on crash/SIGKILL (where
+// SessionEnd / leave.js does not fire), keeps heartbeating setOnline:true, and
+// the 10-min DB TTL never triggers because last_seen refreshes every cycle.
+function findClaudeParentPid() {
+  let pid = process.ppid;
+  for (let depth = 0; depth < 10 && pid > 1; depth++) {
+    try {
+      const comm = execSync(`ps -p ${pid} -o comm=`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+      const basename = comm.split('/').pop();
+      if (basename === 'claude') return pid;
+      const nextPid = parseInt(execSync(`ps -p ${pid} -o ppid=`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(), 10);
+      if (!Number.isFinite(nextPid) || nextPid === pid) return null;
+      pid = nextPid;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 async function readStdin() {
   try {
     const chunks = [];
@@ -62,15 +87,19 @@ async function main() {
     return; // already running
   } catch { /* not running — proceed */ }
 
+  const parentPid = findClaudeParentPid();
+
   try {
     const watchPath = join(CCCHAT_ROOT, 'scripts', 'chat-watch.js');
-    const child = spawn('node', [
+    const spawnArgs = [
       watchPath,
       '--name', identity.name,
       '--project', cwd,
       '--timeout', '300',
       '--persist',
-    ], {
+    ];
+    if (parentPid) spawnArgs.push('--parent-pid', String(parentPid));
+    const child = spawn('node', spawnArgs, {
       detached: true,
       stdio: 'ignore',
       cwd,
