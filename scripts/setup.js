@@ -36,7 +36,7 @@ function ensureDir(dir) {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 }
 
-function mergeSettings(settingsPath, cmds) {
+function mergeSettings(settingsPath, cmds, opts = {}) {
   let settings = {};
   if (existsSync(settingsPath)) {
     try { settings = JSON.parse(readFileSync(settingsPath, 'utf8')); } catch { /* fresh */ }
@@ -78,10 +78,14 @@ function mergeSettings(settingsPath, cmds) {
     settings.hooks.PostToolUse.push({ hooks: [{ type: 'command', command: cmds.notify }] });
   }
 
-  // TaskCompleted — Agent Teams teammate evidence → ccchat
-  if (!settings.hooks.TaskCompleted) settings.hooks.TaskCompleted = [];
-  if (!hasHook(settings.hooks.TaskCompleted, 'task-complete.js')) {
-    settings.hooks.TaskCompleted.push({ hooks: [{ type: 'command', command: cmds.taskComplete }] });
+  // TaskCompleted — Agent Teams teammate evidence → ccchat.
+  // Global-only: task-complete.js posts a new ccchat message per fire and is not
+  // idempotent, so we don't want it in both ~/.claude and .claude (would double-post).
+  if (opts.isGlobal) {
+    if (!settings.hooks.TaskCompleted) settings.hooks.TaskCompleted = [];
+    if (!hasHook(settings.hooks.TaskCompleted, 'task-complete.js')) {
+      settings.hooks.TaskCompleted.push({ hooks: [{ type: 'command', command: cmds.taskComplete }] });
+    }
   }
 
   // UserPromptSubmit — empty-project nudge
@@ -242,7 +246,7 @@ if (isGlobal) {
   console.log('  + Skill:      ~/.claude/skills/digest/');
 
   // Hooks + statusline
-  mergeSettings(join(globalClaudeDir, 'settings.json'), cmds);
+  mergeSettings(join(globalClaudeDir, 'settings.json'), cmds, { isGlobal: true });
   console.log('  + Hooks:      ~/.claude/settings.json');
   console.log('                UserPromptSubmit: poll');
   console.log('                SessionStart: auto-spawn chat-watch');
@@ -301,7 +305,8 @@ console.log(`  + Identity:   .claude/ccchat-identity.json (name: "${agentName}",
 mergeSettings(join(claudeDir, 'settings.json'), cmds);
 console.log('  + Hooks:      .claude/settings.json');
 console.log('                UserPromptSubmit: poll');
-console.log('                Stop, SessionEnd, PostToolUse, TaskCompleted');
+console.log('                Stop, SessionEnd, PostToolUse');
+console.log('                (TaskCompleted is registered globally only — see --global)');
 console.log('  + StatusLine: context bar (🟢🟡🔴 at 60%/80%)');
 
 // Register agent in DB
