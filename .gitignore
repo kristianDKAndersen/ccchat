@@ -8,3 +8,7 @@ node_modules/
 /output/
 
 /docs
+
+# Only the root .claude/ is tracked; guard against strays from running
+# scripts with cwd in a subdir (e.g. scripts/.claude/)
+/*/.claude/

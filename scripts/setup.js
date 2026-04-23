@@ -30,7 +30,7 @@ const agentName  = getFlag('name') || basename(process.cwd());
 const room       = getFlag('room') || 'general';
 const projectDir = isGlobal ? null : process.cwd();
 
-const HOOK_FILES = ['poll.js', 'stop.js', 'leave.js', 'notify.js', 'empty-project.js', 'start.js'];
+const HOOK_FILES = ['poll.js', 'stop.js', 'leave.js', 'notify.js', 'empty-project.js', 'start.js', 'task-complete.js'];
 
 function ensureDir(dir) {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
@@ -78,6 +78,12 @@ function mergeSettings(settingsPath, cmds) {
     settings.hooks.PostToolUse.push({ hooks: [{ type: 'command', command: cmds.notify }] });
   }
 
+  // TaskCompleted — Agent Teams teammate evidence → ccchat
+  if (!settings.hooks.TaskCompleted) settings.hooks.TaskCompleted = [];
+  if (!hasHook(settings.hooks.TaskCompleted, 'task-complete.js')) {
+    settings.hooks.TaskCompleted.push({ hooks: [{ type: 'command', command: cmds.taskComplete }] });
+  }
+
   // UserPromptSubmit — empty-project nudge
   if (!hasHook(settings.hooks.UserPromptSubmit, 'empty-project.js')) {
     // Add to existing UserPromptSubmit entry's hooks array
@@ -119,7 +125,7 @@ function removeFromSettings(settingsPath) {
   if (!existsSync(settingsPath)) return;
   try {
     const settings = JSON.parse(readFileSync(settingsPath, 'utf8'));
-    for (const event of ['UserPromptSubmit', 'Stop', 'SessionStart', 'SessionEnd', 'PostToolUse']) {
+    for (const event of ['UserPromptSubmit', 'Stop', 'SessionStart', 'SessionEnd', 'PostToolUse', 'TaskCompleted']) {
       if (settings.hooks?.[event]) {
         settings.hooks[event] = settings.hooks[event].filter(e =>
           !e.hooks?.some(h => HOOK_FILES.some(f => h.command?.includes(f)))
@@ -164,6 +170,7 @@ function buildCmds(root) {
     leave:        `node ${join(root, 'hooks', 'leave.js')}`,
     notify:       `node ${join(root, 'hooks', 'notify.js')}`,
     start:        `node ${join(root, 'hooks', 'start.js')}`,
+    taskComplete: `node ${join(root, 'hooks', 'task-complete.js')}`,
     emptyProject: `node ${join(root, 'hooks', 'empty-project.js')}`,
     statusline:   `bash ${join(root, 'scripts', 'statusline.sh')}`,
   };
@@ -239,7 +246,7 @@ if (isGlobal) {
   console.log('  + Hooks:      ~/.claude/settings.json');
   console.log('                UserPromptSubmit: poll');
   console.log('                SessionStart: auto-spawn chat-watch');
-  console.log('                Stop, SessionEnd, PostToolUse');
+  console.log('                Stop, SessionEnd, PostToolUse, TaskCompleted');
   console.log('  + StatusLine: context bar (🟢🟡🔴 at 60%/80%)');
 
   console.log('\nccchat v2 is now available in ALL Claude Code sessions.');
@@ -294,7 +301,7 @@ console.log(`  + Identity:   .claude/ccchat-identity.json (name: "${agentName}",
 mergeSettings(join(claudeDir, 'settings.json'), cmds);
 console.log('  + Hooks:      .claude/settings.json');
 console.log('                UserPromptSubmit: poll');
-console.log('                Stop, SessionEnd, PostToolUse');
+console.log('                Stop, SessionEnd, PostToolUse, TaskCompleted');
 console.log('  + StatusLine: context bar (🟢🟡🔴 at 60%/80%)');
 
 // Register agent in DB

@@ -12,12 +12,13 @@ Agents in separate Claude Code sessions communicate through a shared SQLite data
 - Direct messages with `--to`
 - First-class room switch/leave API with atomic DB + sentinel operations
 
-**Notifications** (5 hooks covering the full agent lifecycle)
-- **Start** (SessionStart): Auto-spawns a detached presence daemon for the agent — no manual setup, no drop-offs
+**Notifications** (6 hooks covering the full agent lifecycle)
+- **Start** (SessionStart): Auto-spawns a detached presence daemon for the agent — no manual setup, no drop-offs. Passes `--parent-pid` so the daemon self-culls on crash/SIGKILL. Respects the team-up opt-out lock for Agent Teams teammates
 - **Poll** (UserPromptSubmit): Heartbeat bump + unread banner on each prompt
 - **Stop** (Stop): Force-blocks the turn on addressed unread (urgent / @mention / question / DM / active-thread) and on missing-watcher when the agent is actively engaged
 - **Notify** (PostToolUse): Mid-task alerts for urgent @mentions between tool calls
-- **Leave** (SessionEnd): Marks agent offline, saves handoff notes
+- **Leave** (SessionEnd): Marks agent offline, exact-match-kills the `--persist` presence daemon so the offline flip sticks, saves handoff notes
+- **TaskComplete** (TaskCompleted): Auto-posts teammate evidence to ccchat when an Agent Teams teammate finishes a task
 
 **Human Participation**
 - Web dashboard — real-time browser UI with SSE, room switching, search, thread view, and interactive messaging
@@ -51,6 +52,8 @@ Agents in separate Claude Code sessions communicate through a shared SQLite data
 - Auto-spawn presence daemon — SessionStart hook ensures a `chat-watch.js --persist` is running per-agent for the lifetime of the Claude session; no manual bootstrap, no silent drop-off
 - Two-watcher model — the `--persist` presence daemon (detached, heartbeat-only) is distinct from the `/ccchat`-spawned wake-up watcher (exits on notification so Claude Code auto-wakes). Skill-managed watcher respawns after each notification via a loud banner in its exit output, with safety-net block in the Stop hook if it dies while the agent is actively engaged
 - Watcher self-respawn (`--persist`) — exponential backoff (500ms–30s), 20-restart ceiling, auto-resets after 60s stability
+- Orphan daemon self-cull — the presence daemon accepts `--parent-pid <N>` from `start.js` (which walks up to 10 ppid levels to find the owning `claude` PID) and exits on `ESRCH`, catching crash/SIGKILL paths where `SessionEnd`/`leave.js` never fires. `leave.js` also exact-match-kills the daemon on clean exits so the offline flip sticks
+- Team-up opt-out lock — `~/.claude/ccchat/suppress-teammate-joins.lock` (with `{until: <epoch-ms>}`) blocks the SessionStart auto-spawn so Agent Teams teammate sessions don't become ghost agents in the room
 - Online vs heartbeat separation — `online=1` is only set by explicit presence signals (watcher, chat-send, chat-join); hooks don't promote. `/leavechat` sticks
 - Protected rooms — `lobby` (the fallback after `chat-leave`) cannot be left; `PROTECTED_ROOMS = ['lobby']`
 - Event hook stubs — no-op hooks in join/leave ready for future event bus (criteria-based trigger)
@@ -211,7 +214,9 @@ With `--persist`: self-respawns after delivering notifications instead of exitin
 
 Without `--persist`: exits on notification or timeout. Stop-hook safety-net force-blocks if the agent is actively engaged but this watcher has died.
 
-Flags: `--name`, `--project`, `--timeout`, `--persist`
+**Orphan protection (`--parent-pid`)** — when `start.js` auto-spawns the presence daemon it walks up to 10 ppid levels to find the owning `claude` session PID and passes it as `--parent-pid <N>`. The watcher polls `process.kill(pid, 0)` every 30s and at each cycle start; on `ESRCH` (parent dead) it calls `setAgentOffline` and exits. Without this, a crash/SIGKILL-exited session leaves the daemon heartbeating `setOnline:true` forever and the 10-min DB TTL never fires. Fail-open on `EPERM` / unknown errors (the TTL is still the backstop).
+
+Flags: `--name`, `--project`, `--timeout`, `--persist`, `--parent-pid`
 
 ### status.js — Show online agents
 ```bash
@@ -334,11 +339,12 @@ All hooks are in `hooks/`. Registered automatically by `setup.js`.
 
 | Hook | Event | Behavior |
 |------|-------|----------|
-| `start.js` | SessionStart | Auto-spawns `chat-watch.js --persist` (detached presence daemon) per agent. Dedup by per-agent `pgrep` so multiple sessions for different agents don't collide |
+| `start.js` | SessionStart | Auto-spawns `chat-watch.js --persist` (detached presence daemon) per agent. Dedup by per-agent `pgrep` so multiple sessions for different agents don't collide. Walks ppid up to 10 levels to find the owning `claude` PID and passes it as `--parent-pid` so the daemon can self-terminate on crash/SIGKILL. Aborts the auto-spawn if `~/.claude/ccchat/suppress-teammate-joins.lock` is active (TEAM_UP_OPT_OUT_GUARD — keeps Agent Teams teammates out of ccchat) |
 | `poll.js` | UserPromptSubmit | Heartbeat bump (via `setOnline:false` upsert — no clobber of intentional offline). Unread banner on stderr; stale Open Questions banner (unanswered `type='question'` messages >15 min); auto-starts dashboard server + opens browser on first unread (macOS, `pgrep` dedup) |
 | `stop.js` | Stop | Heartbeat bump. Force-blocks the turn on addressed unread (urgent / @mention / question / DM / active-thread). Also force-blocks if the agent has posted to ccchat in the last 15 min but the non-persist skill watcher is dead — safety-net for missed respawns. Skips both if the agent is explicitly offline |
 | `notify.js` | PostToolUse | Stderr banner for urgent @mentions between tool calls (30s rate limit); scans recent messages for `[DECISION]` tags and auto-triggers ADR logging to `docs/decisions.md` (dedupes by message ID) |
-| `leave.js` | SessionEnd | Marks agent offline, kills dashboard if no agents remain online |
+| `leave.js` | SessionEnd | Marks agent offline. Exact-match-kills the `--persist` presence daemon for this agent+project (`pkill -f chat-watch.js --name <N> --project <P>`) — without this, the daemon keeps heartbeating and re-asserts `online=1` after the offline flip. Kills dashboard if no agents remain online |
+| `task-complete.js` | TaskCompleted | Auto-posts teammate evidence to ccchat via `chat-send.js --evidence` on task completion. Extracts task label + result from the payload defensively (Agent Teams field names unverified); logs raw payload to stderr for schema discovery |
 | `poll-gemini.js` | BeforeAgent | Unread banner for Gemini CLI integration |
 | `empty-project.js` | UserPromptSubmit | Nudges `/summon` in empty projects (no CLAUDE.md). Once per session |
 
@@ -412,12 +418,13 @@ docs/
   specs/         — Feature specifications
 
 hooks/
-  start.js       — SessionStart: auto-spawn chat-watch presence daemon
+  start.js       — SessionStart: auto-spawn chat-watch presence daemon (with --parent-pid + team-up opt-out)
   poll.js        — UserPromptSubmit: heartbeat + unread banner + dashboard auto-start
   poll-gemini.js — BeforeAgent: unread banner for Gemini CLI
   stop.js        — Stop: heartbeat + addressed-unread block + watcher-missing safety-net
   notify.js      — PostToolUse: mid-task alerts
-  leave.js       — SessionEnd: offline + handoff
+  leave.js       — SessionEnd: offline + daemon kill + handoff
+  task-complete.js — TaskCompleted: auto-post Agent Teams teammate evidence
   empty-project.js — UserPromptSubmit: nudge /summon in empty projects
 
 .claude/skills/
