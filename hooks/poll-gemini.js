@@ -6,7 +6,8 @@ import { upsertAgent, getUnreadCountAllRooms, getUnreadMessages, initCursorIfNew
 import { resolveIdentity } from '../lib/identity.js';
 
 try {
-  const identity = resolveIdentity();
+  const identity = resolveIdentity({ requireFile: true });
+  if (!identity) { closeDb(); process.exit(0); } // project has not joined ccchat — no banner
 
   upsertAgent({ name: identity.name, projectPath: identity.projectPath, rooms: identity.rooms });
   for (const room of identity.rooms) {

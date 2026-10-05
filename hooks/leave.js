@@ -9,7 +9,8 @@ import { resolveIdentity } from '../lib/identity.js';
 import { getFlag } from '../lib/args.js';
 
 try {
-  const identity = resolveIdentity({ name: getFlag('name'), project: getFlag('project') });
+  const identity = resolveIdentity({ name: getFlag('name'), project: getFlag('project'), requireFile: true });
+  if (!identity) { closeDb(); process.exit(0); } // project has not joined ccchat — nothing to clean up
   const handoff = getFlag('handoff');
   if (handoff) {
     setHandoffNote(identity.name, identity.projectPath, handoff);

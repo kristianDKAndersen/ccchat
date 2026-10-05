@@ -3,7 +3,7 @@
 // Usage: node chat-join.js --room <room> [--create] [--name agent] [--project path] [--json]
 
 import { setCurrentRoom, upsertAgent, createRoom, closeDb } from '../lib/db.js';
-import { resolveIdentity, updateIdentityFile } from '../lib/identity.js';
+import { resolveIdentity, updateIdentityFile, autoProvisionIdentity } from '../lib/identity.js';
 
 import { args, getFlag } from '../lib/args.js';
 
@@ -18,6 +18,10 @@ if (!room) {
 
 try {
   const identity = resolveIdentity({ name: getFlag('name'), project: getFlag('project') });
+
+  // Explicit join = opt-in to ccchat. Create the identity file if this project
+  // has not joined before. No-op if the file already exists.
+  autoProvisionIdentity(identity.projectPath, identity);
 
   upsertAgent({ name: identity.name, projectPath: identity.projectPath, currentRoom: identity.currentRoom || 'lobby' });
   if (createIfMissing) {

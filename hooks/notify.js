@@ -35,7 +35,8 @@ function saveRateLimit(path, data) {
 }
 
 try {
-  const identity = resolveIdentity();
+  const identity = resolveIdentity({ requireFile: true });
+  if (!identity) { closeDb(); process.exit(0); } // project has not joined ccchat — no notifications
   const hash = projectHash(identity.projectPath);
   const d = getDb();
 

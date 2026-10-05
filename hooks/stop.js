@@ -26,7 +26,8 @@ async function main() {
   for await (const chunk of process.stdin) chunks.push(chunk);
   const input = JSON.parse(Buffer.concat(chunks).toString());
 
-  const identity = resolveIdentity({ project: input.cwd });
+  const identity = resolveIdentity({ project: input.cwd, requireFile: true });
+  if (!identity) return; // project has not joined ccchat — nothing to check
 
   // Stop hook firing = Claude processed a turn. Bump last_seen to keep the
   // agent alive, but DO NOT promote to online=1: that would clobber an
