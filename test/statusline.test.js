@@ -73,9 +73,11 @@ const DOCS_EXAMPLE = {
   fast_mode: false,
   effort: { level: 'high' },
   thinking: { enabled: true },
+  // +30s margin: the script floors the countdown, so a second ticking over between
+  // building this fixture and running the script would print 2h9m / 3d3h.
   rate_limits: {
-    five_hour: { used_percentage: 23.5, resets_at: Math.floor(Date.now() / 1000) + 2 * 3600 + 10 * 60 },
-    seven_day: { used_percentage: 41.2, resets_at: Math.floor(Date.now() / 1000) + 3 * 86400 + 4 * 3600 },
+    five_hour: { used_percentage: 23.5, resets_at: Math.floor(Date.now() / 1000) + 2 * 3600 + 10 * 60 + 30 },
+    seven_day: { used_percentage: 41.2, resets_at: Math.floor(Date.now() / 1000) + 3 * 86400 + 4 * 3600 + 30 },
   },
   vim: { mode: 'NORMAL' },
   agent: { name: 'security-reviewer' },
