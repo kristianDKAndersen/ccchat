@@ -30,6 +30,7 @@ const agentName  = getFlag('name') || basename(process.cwd());
 const room       = getFlag('room') || 'general';
 const projectDir = isGlobal ? null : process.cwd();
 
+// poll.js was removed; kept here so --uninstall still strips stale registrations.
 const HOOK_FILES = ['poll.js', 'stop.js', 'leave.js', 'notify.js', 'empty-project.js', 'start.js', 'task-complete.js'];
 
 function ensureDir(dir) {
@@ -48,11 +49,7 @@ function mergeSettings(settingsPath, cmds, opts = {}) {
     return arr.some(e => e.hooks?.some(h => h.command?.includes(hookFile)));
   }
 
-  // UserPromptSubmit — poll
   if (!settings.hooks.UserPromptSubmit) settings.hooks.UserPromptSubmit = [];
-  if (!hasHook(settings.hooks.UserPromptSubmit, 'poll.js')) {
-    settings.hooks.UserPromptSubmit.push({ hooks: [{ type: 'command', command: cmds.poll }] });
-  }
 
   // Stop
   if (!settings.hooks.Stop) settings.hooks.Stop = [];
@@ -90,13 +87,7 @@ function mergeSettings(settingsPath, cmds, opts = {}) {
 
   // UserPromptSubmit — empty-project nudge
   if (!hasHook(settings.hooks.UserPromptSubmit, 'empty-project.js')) {
-    // Add to existing UserPromptSubmit entry's hooks array
-    const existing = settings.hooks.UserPromptSubmit.find(e => e.hooks?.some(h => h.command?.includes('poll.js')));
-    if (existing) {
-      existing.hooks.push({ type: 'command', command: cmds.emptyProject });
-    } else {
-      settings.hooks.UserPromptSubmit.push({ hooks: [{ type: 'command', command: cmds.emptyProject }] });
-    }
+    settings.hooks.UserPromptSubmit.push({ hooks: [{ type: 'command', command: cmds.emptyProject }] });
   }
 
   // Permissions — ensure ccchat scripts are allowed
@@ -169,7 +160,6 @@ function copyDirWithReplacements(srcDir, destDir) {
 function buildCmds(root) {
   return {
     root,
-    poll:         `node ${join(root, 'hooks', 'poll.js')}`,
     stop:         `node ${join(root, 'hooks', 'stop.js')}`,
     leave:        `node ${join(root, 'hooks', 'leave.js')}`,
     notify:       `node ${join(root, 'hooks', 'notify.js')}`,
@@ -248,7 +238,7 @@ if (isGlobal) {
   // Hooks + statusline
   mergeSettings(join(globalClaudeDir, 'settings.json'), cmds, { isGlobal: true });
   console.log('  + Hooks:      ~/.claude/settings.json');
-  console.log('                UserPromptSubmit: poll');
+  console.log('                UserPromptSubmit: empty-project');
   console.log('                SessionStart: auto-spawn chat-watch');
   console.log('                Stop, SessionEnd, PostToolUse, TaskCompleted');
   console.log('  + StatusLine: context bar (🟢🟡🔴 at 60%/80%)');
@@ -304,7 +294,7 @@ console.log(`  + Identity:   .claude/ccchat-identity.json (name: "${agentName}",
 // Hooks + statusline
 mergeSettings(join(claudeDir, 'settings.json'), cmds);
 console.log('  + Hooks:      .claude/settings.json');
-console.log('                UserPromptSubmit: poll');
+console.log('                UserPromptSubmit: empty-project');
 console.log('                Stop, SessionEnd, PostToolUse');
 console.log('                (TaskCompleted is registered globally only — see --global)');
 console.log('  + StatusLine: context bar (🟢🟡🔴 at 60%/80%)');

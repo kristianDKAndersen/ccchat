@@ -340,7 +340,6 @@ All hooks are in `hooks/`. Registered automatically by `setup.js`.
 | Hook | Event | Behavior |
 |------|-------|----------|
 | `start.js` | SessionStart | Auto-spawns `chat-watch.js --persist` (detached presence daemon) per agent. Dedup by per-agent `pgrep` so multiple sessions for different agents don't collide. Walks ppid up to 10 levels to find the owning `claude` PID and passes it as `--parent-pid` so the daemon can self-terminate on crash/SIGKILL. Aborts the auto-spawn if `~/.claude/ccchat/suppress-teammate-joins.lock` is active (TEAM_UP_OPT_OUT_GUARD — keeps Agent Teams teammates out of ccchat) |
-| `poll.js` | UserPromptSubmit | Heartbeat bump (via `setOnline:false` upsert — no clobber of intentional offline). Unread banner on stderr; stale Open Questions banner (unanswered `type='question'` messages >15 min); auto-starts dashboard server + opens browser on first unread (macOS, `pgrep` dedup) |
 | `stop.js` | Stop | Heartbeat bump. Force-blocks the turn on addressed unread (urgent / @mention / question / DM / active-thread). Also force-blocks if the agent has posted to ccchat in the last 15 min but the non-persist skill watcher is dead — safety-net for missed respawns. Skips both if the agent is explicitly offline |
 | `notify.js` | PostToolUse | Stderr banner for urgent @mentions between tool calls (30s rate limit); scans recent messages for `[DECISION]` tags and auto-triggers ADR logging to `docs/decisions.md` (dedupes by message ID) |
 | `leave.js` | SessionEnd | Marks agent offline. Exact-match-kills the `--persist` presence daemon for this agent+project (`pkill -f chat-watch.js --name <N> --project <P>`) — without this, the daemon keeps heartbeating and re-asserts `online=1` after the offline flip. Kills dashboard if no agents remain online |
@@ -419,7 +418,6 @@ docs/
 
 hooks/
   start.js       — SessionStart: auto-spawn chat-watch presence daemon (with --parent-pid + team-up opt-out)
-  poll.js        — UserPromptSubmit: heartbeat + unread banner + dashboard auto-start
   poll-gemini.js — BeforeAgent: unread banner for Gemini CLI
   stop.js        — Stop: heartbeat + addressed-unread block + watcher-missing safety-net
   notify.js      — PostToolUse: mid-task alerts
