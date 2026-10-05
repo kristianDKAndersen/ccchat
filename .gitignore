@@ -12,3 +12,4 @@ node_modules/
 # Only the root .claude/ is tracked; guard against strays from running
 # scripts with cwd in a subdir (e.g. scripts/.claude/)
 /*/.claude/
+.advisor-output/

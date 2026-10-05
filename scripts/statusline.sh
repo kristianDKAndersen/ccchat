@@ -4,20 +4,41 @@
 
 DATA=$(cat)
 
-# Extract fields with safe defaults
-AGENT=$(echo "$DATA" | jq -r '.agent.name // "ccchat-improve"')
-MODEL=$(echo "$DATA" | jq -r '.model.display_name // .model.id // "unknown"')
-CTX_PCT=$(echo "$DATA" | jq -r '.context_window.used_percentage // 0')
-CTX_USED=$(echo "$DATA" | jq -r '.context_window.used_tokens // empty')
-CTX_TOTAL=$(echo "$DATA" | jq -r '.context_window.total_tokens // empty')
-COST=$(echo "$DATA" | jq -r '.cost.total_cost_usd // 0')
-DURATION_MS=$(echo "$DATA" | jq -r '.cost.total_duration_ms // 0')
-LINES_ADD=$(echo "$DATA" | jq -r '.cost.total_lines_added // 0')
-LINES_REM=$(echo "$DATA" | jq -r '.cost.total_lines_removed // 0')
-RATE_5H=$(echo "$DATA" | jq -r '.rate_limits.five_hour.used_percentage // empty')
-RATE_7D=$(echo "$DATA" | jq -r '.rate_limits.seven_day.used_percentage // empty')
-PROJECT_PATH=$(echo "$DATA" | jq -r '.workspace.root_directory // empty')
-BRANCH=$(echo "$DATA" | jq -r '.worktree.branch // empty')
+# ── Single jq pass: extract every field as a tab-separated row ─────────────
+ROW=$(echo "$DATA" | jq -r '
+  [
+    (.agent.name // ""),
+    (.model.display_name // .model.id // "unknown"),
+    (.effort.level // ""),
+    (.context_window.used_percentage // 0 | tostring),
+    (((.context_window.current_usage.input_tokens // 0)
+      + (.context_window.current_usage.cache_creation_input_tokens // 0)
+      + (.context_window.current_usage.cache_read_input_tokens // 0)) | tostring),
+    (.context_window.context_window_size // "" | tostring),
+    (.cost.total_cost_usd // 0 | tostring),
+    (.cost.total_duration_ms // 0 | tostring),
+    (.cost.total_lines_added // 0 | tostring),
+    (.cost.total_lines_removed // 0 | tostring),
+    (.rate_limits.five_hour.used_percentage // "" | tostring),
+    (.rate_limits.five_hour.resets_at // "" | tostring),
+    (.rate_limits.seven_day.used_percentage // "" | tostring),
+    (.rate_limits.seven_day.resets_at // "" | tostring),
+    (.rate_limits.spend_limit.used_usd // "" | tostring),
+    (.rate_limits.spend_limit.limit_usd // "" | tostring),
+    (.workspace.project_dir // ""),
+    (.workspace.current_dir // .cwd // ""),
+    (.worktree.branch // ""),
+    (.prompt_cache.hit_ratio // "" | tostring),
+    (.session_name // "")
+  ] | join("\u001f")
+' 2>/dev/null)
+
+# NOTE: a tab (or any whitespace-only IFS) makes bash `read` collapse/strip
+# empty leading fields, silently shifting every later field. Use the
+# non-whitespace unit-separator (0x1F) instead.
+IFS=$'\x1f' read -r AGENT MODEL EFFORT CTX_PCT CTX_USED CTX_TOTAL COST DURATION_MS \
+  LINES_ADD LINES_REM RATE_5H RATE_5H_RESET RATE_7D RATE_7D_RESET SPEND_USD \
+  SPEND_LIMIT PROJECT_DIR CURRENT_DIR WT_BRANCH CACHE_HIT_RATIO SESSION_NAME <<< "$ROW"
 
 # ── ANSI color definitions ──────────────────────────────────────────────────
 RESET="\033[0m"
@@ -37,6 +58,15 @@ C_BAR_YELLOW="\033[38;5;226m" # Progress bar mid
 C_BAR_RED="\033[38;5;203m"    # Progress bar high
 C_PROJECT="\033[38;5;180m"    # Warm tan — project name
 C_BRANCH="\033[38;5;156m"     # Light green — branch
+
+# ── Agent name fallback chain ───────────────────────────────────────────────
+# agent.name -> <project_dir>/.claude/ccchat-identity.json -> session_name -> project basename
+if [ -z "$AGENT" ] && [ -n "$PROJECT_DIR" ] && [ -f "$PROJECT_DIR/.claude/ccchat-identity.json" ]; then
+  AGENT=$(jq -r '.name // empty' "$PROJECT_DIR/.claude/ccchat-identity.json" 2>/dev/null)
+fi
+if [ -z "$AGENT" ] && [ -n "$SESSION_NAME" ]; then
+  AGENT="$SESSION_NAME"
+fi
 
 # ── Context bar color thresholds ────────────────────────────────────────────
 CTX_INT=${CTX_PCT%.*}
@@ -78,6 +108,7 @@ format_tokens() {
     return
   fi
   local t=${tokens%.*}
+  [ -z "$t" ] && t=0
   if [ "$t" -ge 1000000 ]; then
     local m=$(( t / 100000 ))
     local whole=$(( m / 10 ))
@@ -104,14 +135,28 @@ else
   CTX_LABEL="${CTX_INT}%"
 fi
 
-# ── Project name (basename of workspace root) ──────────────────────────────
+# ── Project name (basename of project_dir, fallback current_dir, then cwd) ──
+PROJECT_PATH="$PROJECT_DIR"
+[ -z "$PROJECT_PATH" ] && PROJECT_PATH="$CURRENT_DIR"
+[ -z "$PROJECT_PATH" ] && PROJECT_PATH="$(pwd)"
 PROJECT=""
-if [ -n "$PROJECT_PATH" ] && [ "$PROJECT_PATH" != "null" ]; then
-  PROJECT=$(basename "$PROJECT_PATH")
+[ -n "$PROJECT_PATH" ] && PROJECT=$(basename "$PROJECT_PATH")
+
+if [ -z "$AGENT" ]; then
+  AGENT="$PROJECT"
+fi
+
+# ── Branch: worktree.branch, else git in current_dir ────────────────────────
+BRANCH="$WT_BRANCH"
+if [ -z "$BRANCH" ]; then
+  GIT_DIR="$CURRENT_DIR"
+  [ -z "$GIT_DIR" ] && GIT_DIR="$(pwd)"
+  BRANCH=$(git -C "$GIT_DIR" branch --show-current 2>/dev/null)
 fi
 
 # ── Duration formatting ──────────────────────────────────────────────────────
 : "${DURATION_MS:=0}"
+[ -z "$DURATION_MS" ] && DURATION_MS=0
 DURATION_SEC=$((${DURATION_MS%.*} / 1000))
 HOURS=$((DURATION_SEC / 3600))
 MINS=$(( (DURATION_SEC % 3600) / 60 ))
@@ -123,7 +168,29 @@ else
 fi
 
 # ── Cost formatting ──────────────────────────────────────────────────────────
+[ -z "$COST" ] && COST=0
 COST_FMT=$(printf '$%.2f' "$COST")
+
+# ── Reset countdown formatting (epoch seconds -> "2h10m" / "3d4h") ─────────
+format_reset() {
+  local resets_at="$1"
+  [ -z "$resets_at" ] && { echo ""; return; }
+  local resets_int=${resets_at%.*}
+  local now
+  now=$(date +%s)
+  local diff=$(( resets_int - now ))
+  [ "$diff" -lt 0 ] && diff=0
+  local days=$(( diff / 86400 ))
+  local hours=$(( (diff % 86400) / 3600 ))
+  local mins=$(( (diff % 3600) / 60 ))
+  if [ "$days" -gt 0 ]; then
+    echo "${days}d${hours}h"
+  elif [ "$hours" -gt 0 ]; then
+    echo "${hours}h${mins}m"
+  else
+    echo "${mins}m"
+  fi
+}
 
 # ── Rate limit string ────────────────────────────────────────────────────────
 RATE_STR=""
@@ -136,19 +203,39 @@ if [ -n "$RATE_5H" ]; then
   else
     R5_COLOR="$C_LINES_ADD"
   fi
-  RATE_STR="${R5_COLOR}5h:${RATE_5H_INT}%${RESET}"
+  RATE_5H_RST=$(format_reset "$RATE_5H_RESET")
+  RATE_STR="${R5_COLOR}5h:${RATE_5H_INT}%"
+  [ -n "$RATE_5H_RST" ] && RATE_STR="${RATE_STR} ↻${RATE_5H_RST}"
+  RATE_STR="${RATE_STR}${RESET}"
   if [ -n "$RATE_7D" ]; then
     RATE_7D_INT=${RATE_7D%.*}
-    RATE_STR="${RATE_STR} ${DIM}7d:${RATE_7D_INT}%${RESET}"
+    RATE_7D_RST=$(format_reset "$RATE_7D_RESET")
+    RATE_STR="${RATE_STR} ${DIM}7d:${RATE_7D_INT}%"
+    [ -n "$RATE_7D_RST" ] && RATE_STR="${RATE_STR} ↻${RATE_7D_RST}"
+    RATE_STR="${RATE_STR}${RESET}"
   fi
 fi
+if [ -n "$SPEND_USD" ]; then
+  RATE_STR="${RATE_STR}${RATE_STR:+ }${DIM}spend:\$${SPEND_USD}/\$${SPEND_LIMIT}${RESET}"
+fi
+
+# ── Prompt cache hit ratio (0..1 -> "%") ─────────────────────────────────────
+CACHE_STR=""
+if [ -n "$CACHE_HIT_RATIO" ]; then
+  CACHE_PCT=$(echo "$CACHE_HIT_RATIO" | awk '{printf "%.0f", $1 * 100}' 2>/dev/null)
+  [ -n "$CACHE_PCT" ] && CACHE_STR="⚙${CACHE_PCT}%"
+fi
+
+# ── Model + effort ───────────────────────────────────────────────────────────
+MODEL_LABEL="$MODEL"
+[ -n "$EFFORT" ] && MODEL_LABEL="${MODEL}·${EFFORT}"
 
 # ── Build single content line ────────────────────────────────────────────────
 SEP="${C_FRAME}│${RESET}"
 
 COL_AGENT="${C_AGENT}💬 ${AGENT}${RESET}"
 COL_CTX="${BAR} ${CTX_COLOR}${CTX_LABEL}${RESET}"
-COL_MODEL="${C_MODEL}🧠 ${MODEL}${RESET}"
+COL_MODEL="${C_MODEL}🧠 ${MODEL_LABEL}${RESET}"
 COL_COST="${C_COST}💰 ${COST_FMT}${RESET}"
 COL_DUR="${C_DIM_WHITE}⏱️  ${DURATION_FMT}${RESET}"
 COL_LINES="${C_LINES_ADD}📝 +${LINES_ADD}${RESET}${C_FRAME}/${RESET}${C_LINES_REM}-${LINES_REM}${RESET}"
@@ -172,6 +259,11 @@ COL_CONTENT="${COL_CONTENT} ${SEP} ${COL_CTX} ${SEP} ${COL_MODEL} ${SEP} ${COL_C
 # Add rate limits if present
 if [ -n "$RATE_STR" ]; then
   COL_CONTENT="${COL_CONTENT} ${SEP} ${C_COST}⚡${RESET} ${RATE_STR}"
+fi
+
+# Add prompt cache hit ratio if present
+if [ -n "$CACHE_STR" ]; then
+  COL_CONTENT="${COL_CONTENT} ${SEP} ${DIM}${CACHE_STR}${RESET}"
 fi
 
 COL_CONTENT="${COL_CONTENT} "
